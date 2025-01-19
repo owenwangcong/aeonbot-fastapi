@@ -1,0 +1,11 @@
+[19:49:56.519043576] [167346] [1;32m INFO [1;37mCamera [1;34mcamera_manager.cpp:325 [0mlibcamera v0.3.2+99-1230f78d
+[19:49:56.526819568] [167350] [1;32m INFO [1;37mRPI [1;34mpisp.cpp:695 [0mlibpisp version v1.0.7 28196ed6edcf 29-08-2024 (16:33:32)
+[19:49:56.537371194] [167350] [1;32m INFO [1;37mRPI [1;34mpisp.cpp:1154 [0mRegistered camera /base/axi/pcie@120000/rp1/i2c@88000/imx708@1a to CFE device /dev/media1 and ISP device /dev/media0 using PiSP variant BCM2712_C0
+[19:49:56.540611064] [167346] [1;32m INFO [1;37mCamera [1;34mcamera.cpp:1197 [0mconfiguring streams: (0) 1640x1480-XBGR8888 (1) 2304x1296-BGGR_PISP_COMP1
+[19:49:56.540721934] [167350] [1;32m INFO [1;37mRPI [1;34mpisp.cpp:1450 [0mSensor: /base/axi/pcie@120000/rp1/i2c@88000/imx708@1a - Selected sensor format: 2304x1296-SBGGR10_1X10 - Selected CFE format: 2304x1296-PC1B
+INFO:     Started server process [167346]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     10.0.0.117:42567 - "GET / HTTP/1.1" 200 OK
+INFO:     10.0.0.117:42567 - "GET /video-feed HTTP/1.1" 200 OK
