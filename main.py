@@ -18,6 +18,14 @@ def root(request: Request):
     # Render the template with request context
     return templates.TemplateResponse("index.html", {"request": request})
 
+@app.get("/mqtt")
+def mqtt_page(request: Request):
+    return templates.TemplateResponse("mqtt.html", {"request": request})
+
+@app.get("/motor")
+def motor_page(request: Request):
+    return templates.TemplateResponse("motor.html", {"request": request})
+
 @app.get("/video-feed")
 def video_feed():
     return StreamingResponse(

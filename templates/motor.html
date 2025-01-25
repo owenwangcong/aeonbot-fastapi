@@ -1,6 +1,6 @@
 <html>
 <head>
-    <title>Aeonbot Control Center</title>
+    <title>Aeonbot Motor Control</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
     <style>
         body {
@@ -9,45 +9,25 @@
             text-align: center;
         }
         .container {
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            justify-content: space-between;
-        }
-        .camera-container, .control-container {
-            flex: 1;
-            min-width: 300px;
-        }
-        .camera-container {
-            flex: 2;
-            min-width: 640px;
-        }
-        .control-container {
-            flex: 1;
-            min-width: 250px;
-            padding: 15px;
-            background-color: #f8f8f8;
-            border-radius: 8px;
         }
         .button {
-            padding: 12px 20px;
+            padding: 15px 30px;
             font-size: 20px;
-            margin: 5px;
+            margin: 10px;
             cursor: pointer;
             background-color: #4CAF50;
             color: white;
             border: none;
             border-radius: 5px;
             transition: background-color 0.3s;
-            width: 120px;
         }
         .button.active {
             background-color: #3d8b40;
         }
         .slider-container {
-            margin: 10px 0;
+            margin: 20px 0;
         }
         #speedSlider {
             width: 80%;
@@ -55,10 +35,10 @@
         }
         #speedValue {
             font-size: 1.2em;
-            margin: 5px;
+            margin: 10px;
         }
         #status {
-            margin: 10px;
+            margin: 20px;
             padding: 10px;
             border-radius: 5px;
         }
@@ -70,58 +50,43 @@
             background-color: #f2dede;
             color: #a94442;
         }
-        #instructions {
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #f8f8f8;
+        .nav-button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px;
+            background-color: #0066cc;
+            color: white;
+            text-decoration: none;
             border-radius: 5px;
-            text-align: left;
-            font-size: 0.9em;
         }
-        .controls-grid {
-            display: grid;
-            grid-template-columns: repeat(3, auto);
-            gap: 5px;
-            justify-content: center;
-            margin: 10px 0;
-        }
-        .controls-grid .button:nth-child(1) { grid-column: 2; } /* Forward */
-        .controls-grid .button:nth-child(2) { grid-column: 1; } /* Left */
-        .controls-grid .button:nth-child(3) { grid-column: 3; } /* Right */
-        .controls-grid .button:nth-child(4) { grid-column: 2; } /* Backward */
     </style>
 </head>
 
 <body>
-    <h1>Aeonbot Control Center</h1>
     <div class="container">
-        <div class="camera-container">
-            <img src="/video-feed" width="640" height="480" />
+        <a href="/" class="nav-button">← Back to Camera</a>
+        <h1>Motor Control</h1>
+        <div id="status" class="disconnected">Disconnected</div>
+
+        <div class="slider-container">
+            <h3>Speed Control</h3>
+            <input type="range" id="speedSlider" min="0" max="100" value="100">
+            <div id="speedValue">100%</div>
         </div>
 
-        <div class="control-container">
-            <h2>Motor Control</h2>
-            <div id="status" class="disconnected">Disconnected</div>
+        <div>
+            <button id="upBtn" class="button">⬆️ Forward</button><br>
+            <button id="leftBtn" class="button">⬅️ Left</button>
+            <button id="rightBtn" class="button">➡️ Right</button><br>
+            <button id="downBtn" class="button">⬇️ Backward</button>
+        </div>
 
-            <div class="slider-container">
-                <input type="range" id="speedSlider" min="0" max="100" value="100">
-                <div id="speedValue">100%</div>
-            </div>
-
-            <div class="controls-grid">
-                <button id="upBtn" class="button">⬆️ Forward</button>
-                <button id="leftBtn" class="button">⬅️ Left</button>
-                <button id="rightBtn" class="button">➡️ Right</button>
-                <button id="downBtn" class="button">⬇️ Backward</button>
-            </div>
-
-            <div id="instructions">
-                <strong>Keyboard Controls:</strong>
-                <p>⬆️ UP ARROW: Forward</p>
-                <p>⬇️ DOWN ARROW: Backward</p>
-                <p>⬅️ LEFT ARROW: Turn Left</p>
-                <p>➡️ RIGHT ARROW: Turn Right</p>
-            </div>
+        <div id="instructions">
+            <h3>Keyboard Controls:</h3>
+            <p>⬆️ UP ARROW: Forward</p>
+            <p>⬇️ DOWN ARROW: Backward</p>
+            <p>⬅️ LEFT ARROW: Turn Left</p>
+            <p>➡️ RIGHT ARROW: Turn Right</p>
         </div>
     </div>
 
