@@ -29,6 +29,10 @@ const uint8_t DUTY_50  = 128; // ~50%
 const uint8_t DUTY_75  = 192; // ~75%
 const uint8_t DUTY_100 = 255; // 100%
 
+// Add these constants after the PWM parameters
+const unsigned long RAMP_TIME = 100;  // Time to reach target speed in milliseconds
+const uint8_t RAMP_STEPS = 10;       // Number of steps for ramping
+
 // Create a NeoPixel object
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
@@ -47,6 +51,55 @@ WiFiClient client;
 Adafruit_MQTT_Client mqtt(&client, MQTT_SERVER, MQTT_PORT);
 Adafruit_MQTT_Subscribe motorControl = Adafruit_MQTT_Subscribe(&mqtt, MQTT_TOPIC);
 
+// Add these global variables before handleMotorCommand
+struct MotorState {
+    int currentSpeed = 0;
+    int targetSpeed = 0;
+    unsigned long lastUpdate = 0;
+    uint8_t forwardPin;
+    uint8_t backwardPin;
+    
+    MotorState(uint8_t fPin, uint8_t bPin) : forwardPin(fPin), backwardPin(bPin) {}
+    
+    void setTarget(int speed) {
+        targetSpeed = speed;
+    }
+    
+    void update() {
+        if (currentSpeed == targetSpeed) return;
+        
+        unsigned long now = millis();
+        unsigned long timeElapsed = now - lastUpdate;
+        int stepSize = (RAMP_TIME / RAMP_STEPS);
+        
+        if (timeElapsed >= stepSize) {
+            lastUpdate = now;
+            
+            if (currentSpeed < targetSpeed) {
+                currentSpeed += max(1, (targetSpeed - currentSpeed) / RAMP_STEPS);
+                if (currentSpeed > targetSpeed) currentSpeed = targetSpeed;
+            } else {
+                currentSpeed -= max(1, (currentSpeed - targetSpeed) / RAMP_STEPS);
+                if (currentSpeed < targetSpeed) currentSpeed = targetSpeed;
+            }
+            
+            // Apply the new speed
+            if (currentSpeed >= 0) {
+                ledcWrite(forwardPin, currentSpeed);
+                ledcWrite(backwardPin, 0);
+            } else {
+                ledcWrite(forwardPin, 0);
+                ledcWrite(backwardPin, abs(currentSpeed));  // Use abs() for negative speeds
+            }
+        }
+    }
+};
+
+// Initialize motor states
+MotorState leftMotor(L_F_PWM, L_B_PWM);
+MotorState rightMotor(R_F_PWM, R_B_PWM);
+
+// Replace the handleMotorCommand function
 void handleMotorCommand(char *data, uint16_t len) {
     String message = String(data);
     Serial.print("Received command: ");
@@ -55,7 +108,7 @@ void handleMotorCommand(char *data, uint16_t len) {
     int colonIndex = message.indexOf(':');
     String command = message;
     int speed = DUTY_100; // Default to full speed
-    int turnSpeed = DUTY_75; // Default to full speed
+    int turnSpeed = DUTY_75; // Default to 75% for turns
     
     if (colonIndex != -1) {
         command = message.substring(0, colonIndex);
@@ -63,36 +116,34 @@ void handleMotorCommand(char *data, uint16_t len) {
         speed = map(speed, 0, 100, 0, 255);
     }
     
+    // Store current speeds to enable smooth transitions
+    int leftTarget = leftMotor.currentSpeed;
+    int rightTarget = rightMotor.currentSpeed;
+    
     if (command == "forward") {
-        ledcWrite(L_F_PWM, speed);
-        ledcWrite(L_B_PWM, 0);
-        ledcWrite(R_F_PWM, speed);
-        ledcWrite(R_B_PWM, 0);
+        leftTarget = speed;
+        rightTarget = speed;
     } 
     else if (command == "backward") {
-        ledcWrite(L_F_PWM, 0);
-        ledcWrite(L_B_PWM, speed);
-        ledcWrite(R_F_PWM, 0);
-        ledcWrite(R_B_PWM, speed);
+        leftTarget = -speed;
+        rightTarget = -speed;
     }
     else if (command == "left") {
-        ledcWrite(L_F_PWM, 0);
-        ledcWrite(L_B_PWM, turnSpeed);
-        ledcWrite(R_F_PWM, turnSpeed);
-        ledcWrite(R_B_PWM, 0);
+        leftTarget = -turnSpeed;
+        rightTarget = turnSpeed;
     }
     else if (command == "right") {
-        ledcWrite(L_F_PWM, turnSpeed);
-        ledcWrite(L_B_PWM, 0);
-        ledcWrite(R_F_PWM, 0);
-        ledcWrite(R_B_PWM, turnSpeed);
+        leftTarget = turnSpeed;
+        rightTarget = -turnSpeed;
     }
     else if (command == "stop") {
-        ledcWrite(L_F_PWM, 0);
-        ledcWrite(L_B_PWM, 0);
-        ledcWrite(R_F_PWM, 0);
-        ledcWrite(R_B_PWM, 0);
+        leftTarget = 0;
+        rightTarget = 0;
     }
+    
+    // Apply new targets with ramping
+    leftMotor.setTarget(leftTarget);
+    rightMotor.setTarget(rightTarget);
 }
 
 void setup() {
@@ -177,6 +228,8 @@ bool isMQTTConnected() {
 }
 
 void loop() {
+    static unsigned long lastMotorUpdate = 0;
+    const unsigned long MOTOR_UPDATE_INTERVAL = 10; // Update every 10ms
     static unsigned long lastMqttCheck = 0;
     static unsigned long lastInputCheck = 0;
     static uint8_t failedPings = 0;
@@ -185,6 +238,13 @@ void loop() {
     const uint8_t MAX_FAILED_PINGS = 3;  // Number of failed pings before disconnect
     
     unsigned long currentMillis = millis();
+    
+    // Handle motor speed updates
+    if (currentMillis - lastMotorUpdate >= MOTOR_UPDATE_INTERVAL) {
+        lastMotorUpdate = currentMillis;
+        leftMotor.update();
+        rightMotor.update();
+    }
 
     // Handle MQTT connection and maintenance
     if (currentMillis - lastMqttCheck >= MQTT_CHECK_INTERVAL) {
