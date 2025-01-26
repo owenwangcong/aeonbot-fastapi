@@ -41,7 +41,7 @@ const char* SSID     = "MyAccessPoint";
 const char* PASSWORD = "StrongPassword123";
                 
 // MQTT Broker settings
-#define MQTT_SERVER      "192.168.4.1"  // Your broker IP
+#define MQTT_SERVER      "10.0.0.101"  // Your broker IP
 #define MQTT_PORT        1883
 #define MQTT_TOPIC      "motor/control"
 #define MQTT_STATUS_TOPIC "motor/status"
