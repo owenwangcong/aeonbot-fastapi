@@ -89,6 +89,36 @@
         .controls-grid .button:nth-child(2) { grid-column: 1; } /* Left */
         .controls-grid .button:nth-child(3) { grid-column: 3; } /* Right */
         .controls-grid .button:nth-child(4) { grid-column: 2; } /* Backward */
+        .joystick-container {
+            width: 200px;
+            height: 200px;
+            background-color: #eee;
+            border-radius: 50%;
+            position: relative;
+            margin: 20px auto;
+            touch-action: none;
+            border: 2px solid #ccc;
+            box-sizing: border-box;
+        }
+        
+        .joystick-knob {
+            width: 40px;
+            height: 40px;
+            background-color: #4CAF50;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            user-select: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .joystick-info {
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 
@@ -102,6 +132,17 @@
         <div class="control-container">
             <h2>Motor Control</h2>
             <div id="status" class="disconnected">Disconnected</div>
+
+            <div>
+                <h3>Joystick Control</h3>
+                <div class="joystick-container" id="joystick">
+                    <div class="joystick-knob"></div>
+                </div>
+                <div class="joystick-info">
+                    <div>Angle: <span id="angleValue">0°</span></div>
+                    <div>Speed: <span id="joystickSpeed">0%</span></div>
+                </div>
+            </div>
 
             <div class="slider-container">
                 <input type="range" id="speedSlider" min="0" max="100" value="100">
@@ -248,6 +289,119 @@
 
         // Connect when page loads
         connect();
+
+        class Joystick {
+            constructor(container) {
+                this.container = container;
+                this.knob = container.querySelector('.joystick-knob');
+                this.active = false;
+                this.value = { x: 0, y: 0, angle: 0, speed: 0 };
+                
+                // Calculate dimensions after DOM is fully loaded
+                this.updateDimensions();
+                // Update dimensions if window is resized
+                window.addEventListener('resize', () => this.updateDimensions());
+                
+                this.setupEvents();
+            }
+
+            updateDimensions() {
+                const rect = this.container.getBoundingClientRect();
+                this.bounds = rect;
+                this.radius = (rect.width - 4) / 2;  // Subtract border width
+                this.center = {
+                    x: rect.width / 2,
+                    y: rect.height / 2
+                };
+            }
+
+            setupEvents() {
+                const moveHandler = (e) => {
+                    if (!this.active) return;
+                    
+                    e.preventDefault();
+                    const pointer = e.type.startsWith('touch') ? e.touches[0] : e;
+                    const rect = this.container.getBoundingClientRect();
+                    
+                    // Calculate position relative to circle center
+                    let x = pointer.clientX - rect.left - this.center.x;
+                    let y = pointer.clientY - rect.top - this.center.y;
+                    
+                    // Calculate distance and angle
+                    const distance = Math.hypot(x, y);
+                    const angle = Math.atan2(x, -y);
+                    
+                    // Constrain to circle
+                    if (distance > this.radius) {
+                        const constrainedDistance = this.radius;
+                        x = Math.sin(angle) * constrainedDistance;
+                        y = -Math.cos(angle) * constrainedDistance;
+                    }
+                    
+                    // Update knob position
+                    this.knob.style.transform = `translate(${x}px, ${y}px)`;
+                    
+                    // Calculate normalized values (-1 to 1)
+                    this.value.x = x / this.radius;
+                    this.value.y = -y / this.radius;
+                    
+                    // Calculate angle (0-360 degrees)
+                    this.value.angle = ((angle * 180 / Math.PI) + 360) % 360;
+                    
+                    // Calculate speed (0-100%)
+                    this.value.speed = Math.min(100, (distance / this.radius) * 100);
+                    
+                    this.updateDisplay();
+                    this.sendCommand();
+                };
+
+                const startHandler = (e) => {
+                    this.active = true;
+                    this.updateDimensions();  // Update dimensions on start
+                    moveHandler(e);
+                };
+
+                const endHandler = () => {
+                    if (!this.active) return;
+                    this.active = false;
+                    // Return to center
+                    this.knob.style.transform = 'translate(-50%, -50%)';
+                    this.value = { x: 0, y: 0, angle: 0, speed: 0 };
+                    this.updateDisplay();
+                    sendCommand('stop');
+                };
+
+                // Mouse events
+                this.container.addEventListener('mousedown', startHandler);
+                document.addEventListener('mousemove', moveHandler);
+                document.addEventListener('mouseup', endHandler);
+
+                // Touch events
+                this.container.addEventListener('touchstart', startHandler);
+                document.addEventListener('touchmove', moveHandler);
+                document.addEventListener('touchend', endHandler);
+            }
+
+            updateDisplay() {
+                document.getElementById('angleValue').textContent = 
+                    `${Math.round(this.value.angle)}°`;
+                document.getElementById('joystickSpeed').textContent = 
+                    `${Math.round(this.value.speed)}%`;
+            }
+
+            sendCommand() {
+                if (client.isConnected()) {
+                    const message = new Paho.MQTT.Message(
+                        `joystick:${Math.round(this.value.angle)}:${Math.round(this.value.speed)}`
+                    );
+                    message.destinationName = "motor/control";
+                    client.send(message);
+                }
+            }
+        }
+
+        // Initialize joystick after page loads
+        const joystick = new Joystick(document.getElementById('joystick'));
     </script>
 </body>
 </html> 
