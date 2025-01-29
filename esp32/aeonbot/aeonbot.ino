@@ -41,7 +41,7 @@ const char* SSID     = "MyAccessPoint";
 const char* PASSWORD = "StrongPassword123";
                 
 // MQTT Broker settings
-#define MQTT_SERVER      "10.0.0.101"  // Your broker IP
+#define MQTT_SERVER      "192.168.4.1"  // Your broker IP
 #define MQTT_PORT        1883
 #define MQTT_TOPIC      "motor/control"
 #define MQTT_STATUS_TOPIC "motor/status"
@@ -99,51 +99,103 @@ struct MotorState {
 MotorState leftMotor(L_F_PWM, L_B_PWM);
 MotorState rightMotor(R_F_PWM, R_B_PWM);
 
-// Replace the handleMotorCommand function
+// Add this function before handleMotorCommand
+void handleJoystickCommand(float angle, float speed) {
+    // Convert speed from percentage to PWM value (0-255)
+    int pwmSpeed = map(speed, 0, 100, 0, 255);
+    
+    // Convert angle to radians
+    float angleRad = angle * PI / 180.0;
+    
+    // Calculate motor speeds based on angle
+    // 0° (up) = forward (both motors forward)
+    // 90° (right) = turn right (left forward, right backward)
+    // 180° (down) = backward (both motors backward)
+    // 270° (left) = turn left (left backward, right forward)
+    
+    // Calculate speeds using cosine for forward/backward and sine for turning
+    float leftSpeed = pwmSpeed * (cos(angleRad) + sin(angleRad));   // Changed formula
+    float rightSpeed = pwmSpeed * (cos(angleRad) - sin(angleRad));  // Changed formula
+    
+    // Normalize speeds to stay within PWM range (-255 to 255)
+    float maxMagnitude = max(abs(leftSpeed), abs(rightSpeed));
+    if (maxMagnitude > 255) {
+        leftSpeed = (leftSpeed / maxMagnitude) * 255;
+        rightSpeed = (rightSpeed / maxMagnitude) * 255;
+    }
+    
+    // Set motor targets
+    leftMotor.setTarget(int(leftSpeed));
+    rightMotor.setTarget(int(rightSpeed));
+    
+    // Debug output
+    Serial.printf("Angle: %.1f°, Speed: %.1f%%, Left: %d, Right: %d\n", 
+                 angle, speed, int(leftSpeed), int(rightSpeed));
+}
+
+// Update handleMotorCommand to handle joystick messages
 void handleMotorCommand(char *data, uint16_t len) {
     String message = String(data);
     Serial.print("Received command: ");
     Serial.println(message);
     
-    int colonIndex = message.indexOf(':');
-    String command = message;
-    int speed = DUTY_100; // Default to full speed
-    int turnSpeed = DUTY_75; // Default to 75% for turns
+    // Split the message into parts
+    int firstColon = message.indexOf(':');
+    if (firstColon == -1) return;
     
-    if (colonIndex != -1) {
-        command = message.substring(0, colonIndex);
-        speed = message.substring(colonIndex + 1).toInt();
-        speed = map(speed, 0, 100, 0, 255);
-    }
+    String command = message.substring(0, firstColon);
     
-    // Store current speeds to enable smooth transitions
-    int leftTarget = leftMotor.currentSpeed;
-    int rightTarget = rightMotor.currentSpeed;
-    
-    if (command == "forward") {
-        leftTarget = speed;
-        rightTarget = speed;
-    } 
-    else if (command == "backward") {
-        leftTarget = -speed;
-        rightTarget = -speed;
+    if (command == "joystick") {
+        // Parse joystick command: "joystick:angle:speed"
+        int secondColon = message.indexOf(':', firstColon + 1);
+        if (secondColon == -1) return;
+        
+        float angle = message.substring(firstColon + 1, secondColon).toFloat();
+        float speed = message.substring(secondColon + 1).toFloat();
+        
+        handleJoystickCommand(angle, speed);
+    } else {
+        // Handle existing commands
+        int colonIndex = message.indexOf(':');
+        String command = message;
+        int speed = DUTY_100; // Default to full speed
+        int turnSpeed = DUTY_75; // Default to 75% for turns
+        
+        if (colonIndex != -1) {
+            command = message.substring(0, colonIndex);
+            speed = message.substring(colonIndex + 1).toInt();
+            speed = map(speed, 0, 100, 0, 255);
+        }
+        
+        // Store current speeds to enable smooth transitions
+        int leftTarget = leftMotor.currentSpeed;
+        int rightTarget = rightMotor.currentSpeed;
+        
+        if (command == "forward") {
+            leftTarget = speed;
+            rightTarget = speed;
+        } 
+        else if (command == "backward") {
+            leftTarget = -speed;
+            rightTarget = -speed;
+        }
+        else if (command == "left") {
+            leftTarget = -turnSpeed;
+            rightTarget = turnSpeed;
+        }
+        else if (command == "right") {
+            leftTarget = turnSpeed;
+            rightTarget = -turnSpeed;
+        }
+        else if (command == "stop") {
+            leftTarget = 0;
+            rightTarget = 0;
+        }
+        
+        // Apply new targets with ramping
+        leftMotor.setTarget(leftTarget);
+        rightMotor.setTarget(rightTarget);
     }
-    else if (command == "left") {
-        leftTarget = -turnSpeed;
-        rightTarget = turnSpeed;
-    }
-    else if (command == "right") {
-        leftTarget = turnSpeed;
-        rightTarget = -turnSpeed;
-    }
-    else if (command == "stop") {
-        leftTarget = 0;
-        rightTarget = 0;
-    }
-    
-    // Apply new targets with ramping
-    leftMotor.setTarget(leftTarget);
-    rightMotor.setTarget(rightTarget);
 }
 
 void setup() {

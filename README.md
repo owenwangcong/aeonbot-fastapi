@@ -14,3 +14,8 @@ A FastAPI-based web server that streams video from a Raspberry Pi Camera v3 modu
   - picamera2
 
 ## Installation
+
+## Commands
+
+### Copy file to Raspberry Pi
+scp -rp ./* aeonics@10.0.0.101:/home/aeonics/aeonbot-fastapi/
