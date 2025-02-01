@@ -21,6 +21,7 @@
             min-width: 300px;
         }
         .camera-container {
+            position: relative;
             flex: 2;
             min-width: 640px;
         }
@@ -119,6 +120,50 @@
             margin-top: 10px;
             font-size: 0.9em;
         }
+
+        .camera-overlay {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            z-index: 100;
+        }
+
+        .camera-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        
+        .camera-control-select {
+            padding: 5px;
+            margin-right: 5px;
+            background-color: #fff;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+        
+        .camera-control-button {
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .camera-control-button:hover {
+            background-color: #45a049;
+        }
     </style>
 </head>
 
@@ -126,7 +171,23 @@
     <h1>Aeonbot Control Center</h1>
     <div class="container">
         <div class="camera-container">
-            <img src="/video-feed" width="640" height="480" />
+            <div class="camera-overlay" id="cameraOverlay">
+                <div>FPS: <span id="fpsValue">--</span></div>
+                <div>Status: <span id="statusValue">--</span></div>
+                <div>Resolution: <span id="resolutionValue">--</span></div>
+                <div>Format: <span id="formatValue">--</span></div>
+            </div>
+            <div class="camera-controls">
+                <select id="resolutionSelect" class="camera-control-select">
+                    <option value="640x480">640x480 (VGA)</option>
+                    <option value="1280x720" selected>1280x720 (HD)</option>
+                    <option value="1920x1080">1920x1080 (FHD)</option>
+                    <option value="2592x1944">2592x1944 (5MP)</option>
+                    <option value="4608x2592">4608x2592 (12MP)</option>
+                </select>
+                <button id="applyResolution" class="camera-control-button">Apply Resolution</button>
+            </div>
+            <img src="/video-feed" width="1280" height="720" style="max-width: 100%; height: auto;" />
         </div>
 
         <div class="control-container">
@@ -402,6 +463,60 @@
 
         // Initialize joystick after page loads
         const joystick = new Joystick(document.getElementById('joystick'));
+
+        function updateTelemetry() {
+            fetch('/camera-telemetry')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('fpsValue').textContent = data.fps;
+                    document.getElementById('statusValue').textContent = data.status;
+                    document.getElementById('resolutionValue').textContent = data.resolution;
+                    document.getElementById('formatValue').textContent = data.format;
+                })
+                .catch(error => console.error('Error fetching telemetry:', error));
+        }
+
+        // Update telemetry every second
+        setInterval(updateTelemetry, 1000);
+
+        // Add resolution control functionality
+        document.getElementById('applyResolution').addEventListener('click', function() {
+            const resolution = document.getElementById('resolutionSelect').value;
+            
+            // Show loading state
+            this.disabled = true;
+            this.textContent = 'Applying...';
+            
+            fetch('/set-resolution', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ resolution: resolution })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Reload the video feed
+                    const videoFeed = document.querySelector('.camera-container img');
+                    videoFeed.src = '/video-feed?' + new Date().getTime();
+                    
+                    // Update resolution in overlay
+                    document.getElementById('resolutionValue').textContent = resolution;
+                } else {
+                    alert('Failed to change resolution: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to change resolution');
+            })
+            .finally(() => {
+                // Reset button state
+                this.disabled = false;
+                this.textContent = 'Apply Resolution';
+            });
+        });
     </script>
 </body>
 </html> 

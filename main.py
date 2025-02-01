@@ -1,17 +1,20 @@
 import time
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi import Request
+from pydantic import BaseModel
 
-from camera import Camera
+from gstreamer_camera import GStreamerCamera
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
 # Initialize camera
-camera = Camera()
+camera = GStreamerCamera()
+
+class ResolutionRequest(BaseModel):
+    resolution: str
 
 @app.get("/")
 def root(request: Request):
@@ -32,3 +35,29 @@ def video_feed():
         camera.generate_frames(),
         media_type='multipart/x-mixed-replace; boundary=frame'
     )
+
+@app.get("/camera-telemetry")
+async def camera_telemetry():
+    return camera.get_telemetry()
+
+@app.post("/set-resolution")
+async def set_resolution(request: ResolutionRequest):
+    try:
+        # Parse the resolution string
+        width, height = map(int, request.resolution.split('x'))
+        
+        # Attempt to change the camera resolution
+        success = camera.set_resolution(width, height)
+        
+        if success:
+            return JSONResponse({"success": True})
+        else:
+            return JSONResponse({
+                "success": False,
+                "error": "Failed to set resolution"
+            })
+    except Exception as e:
+        return JSONResponse({
+            "success": False,
+            "error": str(e)
+        })
