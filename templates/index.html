@@ -179,11 +179,7 @@
             </div>
             <div class="camera-controls">
                 <select id="resolutionSelect" class="camera-control-select">
-                    <option value="640x480">640x480 (VGA)</option>
-                    <option value="1280x720" selected>1280x720 (HD)</option>
-                    <option value="1920x1080">1920x1080 (FHD)</option>
-                    <option value="2592x1944">2592x1944 (5MP)</option>
-                    <option value="4608x2592">4608x2592 (12MP)</option>
+                    <!-- Options will be populated dynamically -->
                 </select>
                 <button id="applyResolution" class="camera-control-button">Apply Resolution</button>
             </div>
@@ -472,6 +468,11 @@
                     document.getElementById('statusValue').textContent = data.status;
                     document.getElementById('resolutionValue').textContent = data.resolution;
                     document.getElementById('formatValue').textContent = data.format;
+                    
+                    // Update resolution options if available
+                    if (data.supported_resolutions) {
+                        updateResolutionOptions(data.supported_resolutions);
+                    }
                 })
                 .catch(error => console.error('Error fetching telemetry:', error));
         }
@@ -517,6 +518,35 @@
                 this.textContent = 'Apply Resolution';
             });
         });
+
+        function updateResolutionOptions(resolutions) {
+            const select = document.getElementById('resolutionSelect');
+            const currentSelection = select.value; // Store current user selection
+            
+            // Only update options if they've changed
+            const currentOptions = Array.from(select.options).map(opt => opt.value);
+            const hasChanged = resolutions.length !== currentOptions.length || 
+                              !resolutions.every(res => currentOptions.includes(res));
+            
+            if (hasChanged) {
+                select.innerHTML = ''; // Clear existing options
+                
+                resolutions.forEach(resolution => {
+                    const option = document.createElement('option');
+                    option.value = resolution;
+                    option.textContent = resolution;
+                    
+                    // Prioritize keeping user's selection, fall back to current camera resolution
+                    if (resolution === currentSelection) {
+                        option.selected = true;
+                    } else if (!currentSelection && resolution === document.getElementById('resolutionValue').textContent) {
+                        option.selected = true;
+                    }
+                    
+                    select.appendChild(option);
+                });
+            }
+        }
     </script>
 </body>
 </html> 

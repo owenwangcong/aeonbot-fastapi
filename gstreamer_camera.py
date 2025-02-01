@@ -5,10 +5,16 @@ import threading
 import time
 import sys
 import queue
+from picamera2 import Picamera2
 
 class GStreamerCamera:
     def __init__(self):
         Gst.init(None)
+        
+        # Initialize Picamera2 to get supported resolutions
+        self.picam2 = Picamera2()
+        self.supported_resolutions = self._get_supported_resolutions()
+        print("Supported resolutions:", self.supported_resolutions)
         
         print("Initializing GStreamer Camera...")
         
@@ -27,6 +33,41 @@ class GStreamerCamera:
         self.pipeline_status = "Initializing"
         self.resolution = "1280x720"
         self.frame_format = "JPEG"
+
+    def _get_supported_resolutions(self):
+        """Get list of supported resolutions from camera."""
+        try:
+            # Get all sensor modes
+            sensor_modes = self.picam2.sensor_modes
+            resolutions = set()  # Use set to avoid duplicates
+            
+            # Add resolutions from sensor modes
+            for mode in sensor_modes:
+                width, height = mode['size']
+                resolutions.add((width, height))
+            
+            # Add some common resolutions that are usually supported through scaling
+            common_resolutions = [
+                (640, 480),   # VGA
+                (1280, 720),  # HD
+                (1920, 1080), # Full HD
+            ]
+            
+            for res in common_resolutions:
+                if res[0] <= max(r[0] for r in resolutions) and \
+                   res[1] <= max(r[1] for r in resolutions):
+                    resolutions.add(res)
+            
+            # Convert to sorted list
+            return sorted(list(resolutions), key=lambda x: x[0] * x[1])
+            
+        except Exception as e:
+            print(f"Error getting supported resolutions: {e}", file=sys.stderr)
+            # Return some safe default resolutions
+            return [(640, 480), (1280, 720), (1920, 1080)]
+        finally:
+            if hasattr(self, 'picam2'):
+                self.picam2.close()
 
     def create_pipeline(self):
         # Stop existing pipeline if it exists
@@ -180,12 +221,15 @@ class GStreamerCamera:
                 continue
 
     def get_telemetry(self):
-        return {
+        """Get camera telemetry including supported resolutions."""
+        telemetry = {
             "fps": f"{self.current_fps:.1f}",
             "status": self.pipeline_status,
             "resolution": f"{self.current_width}x{self.current_height}",
-            "format": self.frame_format
+            "format": self.frame_format,
+            "supported_resolutions": [f"{w}x{h}" for w, h in self.supported_resolutions]
         }
+        return telemetry
 
     def __del__(self):
         print("Cleaning up camera resources...")

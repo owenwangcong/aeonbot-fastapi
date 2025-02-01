@@ -46,6 +46,13 @@ async def set_resolution(request: ResolutionRequest):
         # Parse the resolution string
         width, height = map(int, request.resolution.split('x'))
         
+        # Check if resolution is supported
+        if (width, height) not in camera.supported_resolutions:
+            return JSONResponse({
+                "success": False,
+                "error": f"Unsupported resolution: {width}x{height}"
+            })
+        
         # Attempt to change the camera resolution
         success = camera.set_resolution(width, height)
         
