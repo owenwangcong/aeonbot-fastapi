@@ -1,5 +1,5 @@
 import time
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Form
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -90,3 +90,18 @@ async def reset_tracking():
     """Endpoint to reset the tracker (stop tracking)."""
     camera.reset_tracking()
     return JSONResponse({"success": True, "message": "Tracker reset."})
+
+@app.post("/set_pipeline_settings")
+async def set_pipeline_settings(
+    color_format: str = Form(None),
+    jpeg_quality: str = Form(None)
+):
+    # Convert jpeg_quality to int if provided
+    if jpeg_quality is not None:
+        jpeg_quality = int(jpeg_quality)
+    
+    # Pass as keyword arguments
+    camera.set_pipeline_settings(color_format=color_format, jpeg_quality=jpeg_quality)
+    
+    # Return a response (FastAPI doesn't use Flask's redirect)
+    return {"success": True}

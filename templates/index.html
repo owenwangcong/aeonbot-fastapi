@@ -150,6 +150,7 @@
             background-color: #fff;
             border: 1px solid #ccc;
             border-radius: 3px;
+            font-size: 14px;
         }
         
         .camera-control-button {
@@ -159,6 +160,8 @@
             border: none;
             border-radius: 3px;
             cursor: pointer;
+            font-size: 14px;
+            margin: 0 3px;
         }
         
         .camera-control-button:hover {
@@ -201,6 +204,19 @@
             gap: 20px;
             margin-bottom: 10px;
         }
+
+        .pipeline-settings {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+        
+        /* Add tooltips for inputs */
+        [title] {
+            position: relative;
+            cursor: help;
+        }
     </style>
 </head>
 
@@ -226,13 +242,39 @@
                 </div>
 
                 <div class="camera-subcontrols">
+                    <!-- Resolution controls -->
                     <select id="resolutionSelect" class="camera-control-select">
                         <!-- Options will be populated dynamically -->
                     </select>
                     <button id="applyResolution" class="camera-control-button">Apply Resolution</button>
                     
+                    <!-- Tracking controls -->
                     <button id="startBtn" class="camera-control-button">Start Tracking</button>
                     <button id="resetBtn" class="camera-control-button">Reset Tracking</button>
+                    
+                    <!-- Pipeline settings -->
+                    <div class="pipeline-settings" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+                        <label for="color_format">Format:</label>
+                        <select id="color_format" name="color_format" class="camera-control-select">
+                            <option value="RGBx">RGBx</option>
+                            <option value="GRAY8">GRAY8</option>
+                            <option value="NV12">NV12</option>
+                            <option value="YUY2">YUY2</option>
+                        </select>
+                        
+                        <label for="jpeg_quality">Quality:</label>
+                        <input type="number" 
+                               id="jpeg_quality" 
+                               name="jpeg_quality" 
+                               min="1" 
+                               max="100" 
+                               value="85" 
+                               class="camera-control-select"
+                               style="width: 70px;"
+                               title="JPEG Quality">
+                        
+                        <button id="applyPipeline" class="camera-control-button">Apply Pipeline</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -743,6 +785,32 @@
                 popup.style.display = 'none';
             }, 3000);
         }
+
+        // Update the pipeline settings submission
+        document.getElementById('applyPipeline').addEventListener('click', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('color_format', document.getElementById('color_format').value);
+            formData.append('jpeg_quality', document.getElementById('jpeg_quality').value);
+            
+            try {
+                const response = await fetch('/set_pipeline_settings', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showPopup('Pipeline settings updated successfully');
+                } else {
+                    showPopup('Failed to update pipeline settings');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showPopup('Error updating pipeline settings');
+            }
+        });
     </script>
 </body>
 </html> 

@@ -18,6 +18,10 @@ class GStreamerCamera:
     def __init__(self):
         Gst.init(None)
 
+        # Keep track of color format and JPEG quality for the pipeline.
+        self.color_format = "RGBx"
+        self.jpeg_quality = 85
+
         # Delete code that initializes Picamera2
         # if not GStreamerCamera._global_picam2:
         #     GStreamerCamera._global_picam2 = Picamera2()
@@ -60,16 +64,29 @@ class GStreamerCamera:
             (1920, 1080),  # Full HD
         ]
 
+    def set_pipeline_settings(self, color_format=None, jpeg_quality=None):
+        """
+        Dynamically update pipeline settings such as color format and JPEG quality,
+        then recreate the pipeline to apply changes.
+        """
+        if color_format is not None:
+            self.color_format = color_format
+        if jpeg_quality is not None:
+            self.jpeg_quality = jpeg_quality
+
+        # Re-create the pipeline with the updated settings
+        self.create_pipeline()
+
     def create_pipeline(self):
         # If pipeline exists, stop it
         if self.pipeline:
             self.pipeline.set_state(Gst.State.NULL)
 
-        # We'll keep using libcamerasrc in the pipeline
+        # Use the dynamic color format and jpeg quality in the pipeline
         self.pipeline_string = (
             f'libcamerasrc ! '
-            f'video/x-raw,format=RGBx,width={self.current_width},height={self.current_height},framerate=30/1 ! '
-            f'videoconvert ! jpegenc quality=85 ! '
+            f'video/x-raw,format={self.color_format},width={self.current_width},height={self.current_height},framerate=30/1 ! '
+            f'videoconvert ! jpegenc quality={self.jpeg_quality} ! '
             f'appsink name=sink emit-signals=true sync=false'
         )
 
