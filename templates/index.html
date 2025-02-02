@@ -164,6 +164,43 @@
         .camera-control-button:hover {
             background-color: #45a049;
         }
+
+        /* Add a new container style for the subcontrols under the video */
+        .camera-subcontrols {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        /* Optional: ensure the popup message looks nice */
+        .popup-message {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 20px;
+            background-color: #333;
+            color: #fff;
+            border-radius: 5px;
+            font-size: 0.9em;
+            z-index: 9999;
+            opacity: 0.9;
+        }
+
+        /* Add a container that groups the video, info, and controls together */
+        .camera-box {
+            display: inline-block;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .camera-info {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 
@@ -171,24 +208,32 @@
     <h1>Aeonbot Control Center</h1>
     <div class="container">
         <div class="camera-container">
-            <div class="camera-overlay" id="cameraOverlay">
-                <div>FPS: <span id="fpsValue">--</span></div>
-                <div>Status: <span id="statusValue">--</span></div>
-                <div>Resolution: <span id="resolutionValue">--</span></div>
-                <div>Format: <span id="formatValue">--</span></div>
-            </div>
-            <div class="camera-controls">
-                <select id="resolutionSelect" class="camera-control-select">
-                    <!-- Options will be populated dynamically -->
-                </select>
-                <button id="applyResolution" class="camera-control-button">Apply Resolution</button>
-            </div>
-            <div style="position: relative; display: inline-block;">
-                <img id="videoFeed" src="/video-feed" alt="Video Stream" style="width: 640px; height: 360px;" />
-                <canvas id="boundingCanvas" 
-                        width="640" height="360"
-                        style="position: absolute; top: 0; left: 0;">
-                </canvas>
+            <!-- NEW grouping container -->
+            <div class="camera-box">
+                <div class="camera-info">
+                    <div>FPS: <span id="fpsValue">--</span></div>
+                    <div>Resolution: <span id="resolutionValue">--</span></div>
+                    <div>Format: <span id="formatValue">--</span></div>
+                </div>
+                
+                <div style="position: relative; display: inline-block;">
+                    <img id="videoFeed" src="/video-feed" alt="Video Stream"
+                         style="width: 640px; height: 360px;" />
+                    <canvas id="boundingCanvas"
+                            width="640" height="360"
+                            style="position: absolute; top: 0; left: 0;">
+                    </canvas>
+                </div>
+
+                <div class="camera-subcontrols">
+                    <select id="resolutionSelect" class="camera-control-select">
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                    <button id="applyResolution" class="camera-control-button">Apply Resolution</button>
+                    
+                    <button id="startBtn" class="camera-control-button">Start Tracking</button>
+                    <button id="resetBtn" class="camera-control-button">Reset Tracking</button>
+                </div>
             </div>
         </div>
 
@@ -226,12 +271,12 @@
                 <p>⬅️ LEFT ARROW: Turn Left</p>
                 <p>➡️ RIGHT ARROW: Turn Right</p>
             </div>
-
-            <div style="margin-top: 10px;">
-                <button id="startBtn">Start Tracking</button>
-                <button id="resetBtn">Reset Tracking</button>
-            </div>
         </div>
+    </div>
+
+    <!-- Insert a simple popup message container somewhere in the body, e.g. below the main container -->
+    <div id="popupMessage" class="popup-message" style="display:none;">
+        <!-- This text is updated dynamically via JS -->
     </div>
 
     <script>
@@ -320,7 +365,7 @@
                 });
             });
             ['mouseup', 'mouseleave', 'touchend'].forEach(event => {
-                btn.addEventListener(event, (e) => {
+                btn.addEventListener('mouseup', (e) => {
                     e.preventDefault();
                     btn.classList.remove('active');
                     sendCommand('stop');
@@ -476,7 +521,6 @@
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('fpsValue').textContent = data.fps;
-                    document.getElementById('statusValue').textContent = data.status;
                     document.getElementById('resolutionValue').textContent = data.resolution;
                     document.getElementById('formatValue').textContent = data.format;
                     
@@ -516,12 +560,12 @@
                     // Update resolution in overlay
                     document.getElementById('resolutionValue').textContent = resolution;
                 } else {
-                    alert('Failed to change resolution: ' + data.error);
+                    showPopup('Failed to change resolution: ' + data.error);
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Failed to change resolution');
+                showPopup('Failed to change resolution');
             })
             .finally(() => {
                 // Reset button state
@@ -635,7 +679,7 @@
 
             // Validate box size
             if (finalW <= 0 || finalH <= 0) {
-                alert("Please draw a valid bounding box before starting tracking.");
+                showPopup("Please draw a valid bounding box before starting tracking.");
                 return;
             }
 
@@ -666,10 +710,10 @@
                 });
                 const result = await res.json();
                 console.log(result);
-                alert(result.message || "Tracking started");
+                showPopup(result.message || "Tracking started");
             } catch (err) {
                 console.error(err);
-                alert("Error starting tracking");
+                showPopup("Error starting tracking");
             }
         });
 
@@ -679,15 +723,26 @@
                 const res = await fetch("/reset-tracking", { method: "POST" });
                 const result = await res.json();
                 console.log(result);
-                alert(result.message || "Tracking reset");
+                showPopup(result.message || "Tracking reset");
                 
                 // Clear the bounding box overlay
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             } catch (err) {
                 console.error(err);
-                alert("Error resetting tracker");
+                showPopup("Error resetting tracker");
             }
         });
+
+        // 1. Create a helper function for popup messages
+        function showPopup(messageText) {
+            const popup = document.getElementById('popupMessage');
+            popup.textContent = messageText;
+            popup.style.display = 'block';
+            // Hide automatically after 3 seconds (or adapt as needed)
+            setTimeout(() => {
+                popup.style.display = 'none';
+            }, 3000);
+        }
     </script>
 </body>
 </html> 
