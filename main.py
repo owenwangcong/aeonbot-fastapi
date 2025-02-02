@@ -1,5 +1,5 @@
 import time
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Request, Form, Response
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -105,3 +105,16 @@ async def set_pipeline_settings(
     
     # Return a response (FastAPI doesn't use Flask's redirect)
     return {"success": True}
+
+@app.get("/api/telemetry")
+async def get_telemetry():
+    """Endpoint to get camera telemetry data."""
+    return JSONResponse(camera.get_telemetry())
+
+@app.post("/api/settings")
+async def update_settings(request: Request):
+    """Endpoint to update camera settings."""
+    data = await request.json()
+    if 'encoder' in data:
+        camera.set_pipeline_settings(encoder=data['encoder'])
+    return JSONResponse({'status': 'success'})

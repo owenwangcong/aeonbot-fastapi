@@ -256,10 +256,7 @@
                     <div class="pipeline-settings" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
                         <label for="color_format">Format:</label>
                         <select id="color_format" name="color_format" class="camera-control-select">
-                            <option value="RGBx">RGBx</option>
-                            <option value="GRAY8">GRAY8</option>
-                            <option value="NV12">NV12</option>
-                            <option value="YUY2">YUY2</option>
+                            <!-- Options will be populated dynamically via JavaScript -->
                         </select>
                         
                         <label for="jpeg_quality">Quality:</label>
@@ -312,6 +309,14 @@
                 <p>⬇️ DOWN ARROW: Backward</p>
                 <p>⬅️ LEFT ARROW: Turn Left</p>
                 <p>➡️ RIGHT ARROW: Turn Right</p>
+            </div>
+
+            <!-- Add this where you want the encoder selection to appear -->
+            <div class="control-group">
+                <label for="encoder">Video Encoder:</label>
+                <select id="encoder" onchange="updateEncoder(this.value)">
+                    <!-- Will be populated dynamically -->
+                </select>
             </div>
         </div>
     </div>
@@ -559,7 +564,7 @@
         const joystick = new Joystick(document.getElementById('joystick'));
 
         function updateTelemetry() {
-            fetch('/camera-telemetry')
+            fetch('/api/telemetry')
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('fpsValue').textContent = data.fps;
@@ -569,6 +574,25 @@
                     // Update resolution options if available
                     if (data.supported_resolutions) {
                         updateResolutionOptions(data.supported_resolutions);
+                    }
+                    
+                    // Update format options if available
+                    if (data.supported_formats) {
+                        updateFormatOptions(data.supported_formats);
+                    }
+
+                    // Update encoder selection
+                    const encoderSelect = document.getElementById('encoder');
+                    if (encoderSelect.options.length === 0) {  // Only populate if empty
+                        Object.entries(data.supported_encoders).forEach(([key, value]) => {
+                            const option = document.createElement('option');
+                            option.value = key;
+                            option.text = value.name;
+                            if (key === data.current_encoder) {
+                                option.selected = true;
+                            }
+                            encoderSelect.appendChild(option);
+                        });
                     }
                 })
                 .catch(error => console.error('Error fetching telemetry:', error));
@@ -637,6 +661,33 @@
                     if (resolution === currentSelection) {
                         option.selected = true;
                     } else if (!currentSelection && resolution === document.getElementById('resolutionValue').textContent) {
+                        option.selected = true;
+                    }
+                    
+                    select.appendChild(option);
+                });
+            }
+        }
+
+        function updateFormatOptions(formats) {
+            const select = document.getElementById('color_format');
+            const currentFormat = select.value; // Store current selection
+            
+            // Only update if formats have changed
+            const currentOptions = Array.from(select.options).map(opt => opt.value);
+            const hasChanged = formats.length !== currentOptions.length || 
+                              !formats.every(fmt => currentOptions.includes(fmt));
+            
+            if (hasChanged) {
+                select.innerHTML = ''; // Clear existing options
+                
+                formats.forEach(format => {
+                    const option = document.createElement('option');
+                    option.value = format;
+                    option.textContent = format;
+                    
+                    // Keep current selection if possible
+                    if (format === currentFormat) {
                         option.selected = true;
                     }
                     
@@ -811,6 +862,25 @@
                 showPopup('Error updating pipeline settings');
             }
         });
+
+        // Add this function to your existing JavaScript
+        function updateEncoder(encoder) {
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    encoder: encoder
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Encoder updated:', data);
+                updateTelemetry();  // Refresh telemetry display
+            })
+            .catch(error => console.error('Error updating encoder:', error));
+        }
     </script>
 </body>
 </html> 

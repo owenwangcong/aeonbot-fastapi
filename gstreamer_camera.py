@@ -18,18 +18,22 @@ class GStreamerCamera:
     def __init__(self):
         Gst.init(None)
 
-        # Keep track of color format and JPEG quality for the pipeline.
+        # Keep track of color format, JPEG quality, and encoder for the pipeline
         self.color_format = "RGBx"
         self.jpeg_quality = 85
-
-        # Delete code that initializes Picamera2
-        # if not GStreamerCamera._global_picam2:
-        #     GStreamerCamera._global_picam2 = Picamera2()
-        # self.picam2 = GStreamerCamera._global_picam2
+        self.current_encoder = "jpegenc"  # Default encoder
+        
+        # Get supported encoders
+        self.supported_encoders = self._get_supported_encoders()
+        print("Supported encoders:", self.supported_encoders)
 
         # Instead, just store a static list of common resolutions:
         self.supported_resolutions = self._get_supported_resolutions()
         print("Supported resolutions:", self.supported_resolutions)
+
+        # Get supported formats and resolutions
+        self.supported_formats = self._get_supported_formats()
+        print("Supported formats:", self.supported_formats)
 
         print("Initializing GStreamer Camera...")
 
@@ -64,15 +68,86 @@ class GStreamerCamera:
             (1920, 1080),  # Full HD
         ]
 
-    def set_pipeline_settings(self, color_format=None, jpeg_quality=None):
+    def _get_supported_formats(self):
         """
-        Dynamically update pipeline settings such as color format and JPEG quality,
+        Get list of supported color formats from GStreamer.
+        """
+        try:
+            # Create a test source to query formats
+            caps = Gst.Caps.from_string("video/x-raw")
+            formats = []
+            
+            # Common formats to test
+            test_formats = [
+                "RGB", "BGR", "RGBx", "BGRx", "xRGB", "xBGR",
+                "RGBA", "BGRA", "ARGB", "ABGR", "GREY", "GRAY", "GRAY8", "GRAY16_LE",
+                "GRAY16_BE", "YUY2", "UYVY", "YVYU", "I420", "YV12",
+                "NV12", "NV21"
+            ]
+            
+            for fmt in test_formats:
+                test_caps = Gst.Caps.from_string(f"video/x-raw,format={fmt}")
+                if test_caps.is_fixed():
+                    formats.append(fmt)
+            
+            if not formats:
+                # Fallback to basic formats if none found
+                formats = ["RGBx", "GRAY8", "NV12", "YUY2"]
+                
+            print("Supported formats:", formats)
+            return formats
+            
+        except Exception as e:
+            print(f"Error getting supported formats: {e}", file=sys.stderr)
+            # Return basic formats as fallback
+            return ["RGBx", "GRAY8", "NV12", "YUY2"]
+
+    def _get_supported_encoders(self):
+        """
+        Query GStreamer for available video encoders and return a dict of encoder info.
+        """
+        encoders = {}
+        
+        # List of common video encoders to check
+        encoder_elements = [
+            ("jpegenc", "JPEG", "image/jpeg"),
+            ("x264enc", "H.264", "video/x-h264"),
+            ("vp8enc", "VP8", "video/x-vp8"),
+            ("vp9enc", "VP9", "video/x-vp9"),
+            ("av1enc", "AV1", "video/x-av1"),
+            ("mpeg2enc", "MPEG2", "video/mpeg")
+        ]
+        
+        for element_name, friendly_name, mime_type in encoder_elements:
+            element = Gst.ElementFactory.find(element_name)
+            if element:
+                encoders[element_name] = {
+                    "name": friendly_name,
+                    "mime_type": mime_type,
+                    "element": element_name
+                }
+        
+        if not encoders:
+            # Fallback to just JPEG if no encoders found
+            encoders["jpegenc"] = {
+                "name": "JPEG",
+                "mime_type": "image/jpeg",
+                "element": "jpegenc"
+            }
+        
+        return encoders
+
+    def set_pipeline_settings(self, color_format=None, jpeg_quality=None, encoder=None):
+        """
+        Dynamically update pipeline settings such as color format, quality, and encoder,
         then recreate the pipeline to apply changes.
         """
         if color_format is not None:
             self.color_format = color_format
         if jpeg_quality is not None:
             self.jpeg_quality = jpeg_quality
+        if encoder is not None and encoder in self.supported_encoders:
+            self.current_encoder = encoder
 
         # Re-create the pipeline with the updated settings
         self.create_pipeline()
@@ -82,15 +157,34 @@ class GStreamerCamera:
         if self.pipeline:
             self.pipeline.set_state(Gst.State.NULL)
 
-        # Use the dynamic color format and jpeg quality in the pipeline
+        # Configure encoder element based on selected encoder
+        encoder_config = ""
+        decoder_config = ""
+        if self.current_encoder == "jpegenc":
+            encoder_config = f"jpegenc quality={self.jpeg_quality}"
+        elif self.current_encoder == "x264enc":
+            encoder_config = "x264enc tune=zerolatency speed-preset=ultrafast"
+            decoder_config = "! h264parse ! avdec_h264 ! jpegenc quality=85"
+        elif self.current_encoder == "vp8enc":
+            encoder_config = "vp8enc deadline=1"
+            decoder_config = "! vp8dec ! jpegenc quality=85"
+        elif self.current_encoder == "vp9enc":
+            encoder_config = "vp9enc deadline=1"
+            decoder_config = "! vp9dec ! jpegenc quality=85"
+        else:
+            # Default fallback to the encoder name if no special config needed
+            encoder_config = self.current_encoder
+
+        # Update pipeline string with dynamic encoder and decoder
         self.pipeline_string = (
             f'libcamerasrc ! '
             f'video/x-raw,format={self.color_format},width={self.current_width},height={self.current_height},framerate=30/1 ! '
-            f'videoconvert ! jpegenc quality={self.jpeg_quality} ! '
+            f'videoconvert ! {encoder_config} {decoder_config} ! '
             f'appsink name=sink emit-signals=true sync=false'
         )
 
         try:
+            print(f"Creating pipeline: {self.pipeline_string}")  # Debug print
             self.pipeline = Gst.parse_launch(self.pipeline_string)
             self.sink = self.pipeline.get_by_name('sink')
             if not self.sink:
@@ -266,13 +360,16 @@ class GStreamerCamera:
         print("Tracking has been reset.")
 
     def get_telemetry(self):
-        """Get camera telemetry including supported resolutions."""
+        """Get camera telemetry data."""
         telemetry = {
             "fps": f"{self.current_fps:.1f}",
             "status": self.pipeline_status,
             "resolution": f"{self.current_width}x{self.current_height}",
             "format": self.frame_format,
-            "supported_resolutions": [f"{w}x{h}" for w, h in self.supported_resolutions]
+            "supported_resolutions": [f"{w}x{h}" for w, h in self.supported_resolutions],
+            "supported_formats": self.supported_formats,
+            "current_encoder": self.current_encoder,
+            "supported_encoders": self.supported_encoders
         }
         return telemetry
 
