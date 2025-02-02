@@ -16,6 +16,13 @@ camera = GStreamerCamera()
 class ResolutionRequest(BaseModel):
     resolution: str
 
+# Add a small pydantic model for bounding box coordinates
+class BBox(BaseModel):
+    x: int
+    y: int
+    w: int
+    h: int
+
 @app.get("/")
 def root(request: Request):
     # Render the template with request context
@@ -68,3 +75,18 @@ async def set_resolution(request: ResolutionRequest):
             "success": False,
             "error": str(e)
         })
+
+@app.post("/start-tracking")
+async def start_tracking(bbox: BBox):
+    """Endpoint to start tracking an object given its bounding box."""
+    success = camera.start_tracking(bbox.x, bbox.y, bbox.w, bbox.h)
+    if success:
+        return JSONResponse({"success": True, "message": "Tracking started."})
+    else:
+        return JSONResponse({"success": False, "message": "Failed to start tracker."})
+
+@app.post("/reset-tracking")
+async def reset_tracking():
+    """Endpoint to reset the tracker (stop tracking)."""
+    camera.reset_tracking()
+    return JSONResponse({"success": True, "message": "Tracker reset."})

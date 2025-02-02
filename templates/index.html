@@ -183,7 +183,13 @@
                 </select>
                 <button id="applyResolution" class="camera-control-button">Apply Resolution</button>
             </div>
-            <img src="/video-feed" width="1280" height="720" style="max-width: 100%; height: auto;" />
+            <div style="position: relative; display: inline-block;">
+                <img id="videoFeed" src="/video-feed" alt="Video Stream" style="width: 640px; height: 360px;" />
+                <canvas id="boundingCanvas" 
+                        width="640" height="360"
+                        style="position: absolute; top: 0; left: 0;">
+                </canvas>
+            </div>
         </div>
 
         <div class="control-container">
@@ -219,6 +225,11 @@
                 <p>⬇️ DOWN ARROW: Backward</p>
                 <p>⬅️ LEFT ARROW: Turn Left</p>
                 <p>➡️ RIGHT ARROW: Turn Right</p>
+            </div>
+
+            <div style="margin-top: 10px;">
+                <button id="startBtn">Start Tracking</button>
+                <button id="resetBtn">Reset Tracking</button>
             </div>
         </div>
     </div>
@@ -547,6 +558,97 @@
                 });
             }
         }
+
+        // Retrieve canvas and its context
+        const canvas = document.getElementById('boundingCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let isDrawing = false;
+        let startX = 0, startY = 0;
+        let endX = 0, endY = 0;
+
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            [startX, startY] = getMousePos(canvas, e);
+            [endX, endY] = [startX, startY];
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            [endX, endY] = getMousePos(canvas, e);
+            drawBox();
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDrawing = false;
+        });
+
+        function getMousePos(canvasElem, evt) {
+            const rect = canvasElem.getBoundingClientRect();
+            return [
+                evt.clientX - rect.left,
+                evt.clientY - rect.top
+            ];
+        }
+
+        function drawBox() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(startX, startY, endX - startX, endY - startY);
+        }
+
+        // Adjust "Start Tracking" to ensure int coords + no negatives
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            // Compute top-left corner
+            const x1 = Math.round(startX);
+            const y1 = Math.round(startY);
+            const x2 = Math.round(endX);
+            const y2 = Math.round(endY);
+
+            const finalX = Math.min(x1, x2);
+            const finalY = Math.min(y1, y2);
+            const finalW = Math.abs(x2 - x1);
+            const finalH = Math.abs(y2 - y1);
+
+            // Validate box size
+            if (finalW <= 0 || finalH <= 0) {
+                alert("Please draw a valid bounding box before starting tracking.");
+                return;
+            }
+
+            // Send to server
+            const bbox = { x: finalX, y: finalY, w: finalW, h: finalH };
+            try {
+                const res = await fetch("/start-tracking", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(bbox)
+                });
+                const result = await res.json();
+                console.log(result);
+                alert(result.message || "Tracking started");
+            } catch (err) {
+                console.error(err);
+                alert("Error starting tracking");
+            }
+        });
+
+        // Reset tracking
+        document.getElementById('resetBtn').addEventListener('click', async () => {
+            try {
+                const res = await fetch("/reset-tracking", { method: "POST" });
+                const result = await res.json();
+                console.log(result);
+                alert(result.message || "Tracking reset");
+                
+                // Clear the bounding box overlay
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            } catch (err) {
+                console.error(err);
+                alert("Error resetting tracker");
+            }
+        });
     </script>
 </body>
 </html> 

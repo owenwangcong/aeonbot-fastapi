@@ -6,6 +6,8 @@ import time
 import sys
 import queue
 from picamera2 import Picamera2
+import cv2
+import numpy as np
 
 class GStreamerCamera:
     def __init__(self):
@@ -33,6 +35,11 @@ class GStreamerCamera:
         self.pipeline_status = "Initializing"
         self.resolution = "1280x720"
         self.frame_format = "JPEG"
+
+        # Add instance variables for tracking
+        self.tracker = None
+        self.tracking_active = False
+        self.tracked_bbox = (0, 0, 0, 0)
 
     def _get_supported_resolutions(self):
         """Get list of supported resolutions from camera."""
@@ -186,33 +193,75 @@ class GStreamerCamera:
             except Exception as e:
                 print(f"Error in bus monitor: {e}", file=sys.stderr)
 
+    def start_tracking(self, x: int, y: int, w: int, h: int) -> bool:
+        """Initialize the CSRT tracker with the given bounding box."""
+        try:
+            # Wait up to 1 second for a frame if the queue is empty
+            initial_frame = None
+            for _ in range(10):  # 10 retries x 0.1s = 1 second
+                if not self.frame_queue.empty():
+                    initial_frame = self.frame_queue.get_nowait()
+                    break
+                else:
+                    time.sleep(0.1)
+
+            # If still no frame, bail
+            if initial_frame is None:
+                print("No frame available to start tracking.", file=sys.stderr)
+                return False
+            
+            # Convert raw bytes to a proper image (OpenCV)
+            nparr = np.frombuffer(initial_frame, np.uint8)
+            frame_cv = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            # Create and initialize the CSRT tracker
+            self.tracker = cv2.legacy.TrackerCSRT_create()
+            self.tracker.init(frame_cv, (x, y, w, h))
+
+            self.tracked_bbox = (x, y, w, h)
+            self.tracking_active = True
+            print("CSRT tracker initialized with bbox:", self.tracked_bbox)
+            return True
+        except Exception as e:
+            print(f"Error starting tracker: {e}", file=sys.stderr)
+            return False
+
+    def reset_tracking(self):
+        """Reset the tracker."""
+        self.tracker = None
+        self.tracking_active = False
+        self.tracked_bbox = (0, 0, 0, 0)
+        print("Tracking has been reset.")
+
     def generate_frames(self):
         print("Starting frame generation...")
-        frame_count = 0
-        last_time = time.time()
-        
         while True:
             try:
-                # Get frame from queue with timeout
                 data = self.frame_queue.get(timeout=5)
+                frame_cv = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+                # If tracking is active, update the tracker
+                if self.tracking_active and self.tracker is not None:
+                    success, box = self.tracker.update(frame_cv)
+                    if success:
+                        (x, y, w, h) = [int(v) for v in box]
+                        self.tracked_bbox = (x, y, w, h)
+                        # Draw bounding box
+                        cv2.rectangle(frame_cv, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    else:
+                        cv2.putText(frame_cv, "Tracking lost", (20, 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 
-                # Calculate and print FPS every 30 frames
-                frame_count += 1
-                if frame_count % 30 == 0:
-                    current_time = time.time()
-                    fps = 30 / (current_time - last_time)
-                    print(f"FPS: {fps:.2f}")
-                    last_time = current_time
-                
-                # Construct the multipart response
-                frame = b'--frame\r\n' + \
-                       b'Content-Type: image/jpeg\r\n\r\n' + \
-                       data + \
-                       b'\r\n'
+                # Convert back to JPEG bytes
+                ret, buffer = cv2.imencode('.jpg', frame_cv)
+                if not ret:
+                    continue
+
+                # Construct multipart response
+                frame = b'--frame\r\n' \
+                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n'
                 yield frame
-                
             except queue.Empty:
-                print("No frames available", file=sys.stderr)
                 time.sleep(0.1)
                 continue
             except Exception as e:
