@@ -559,10 +559,31 @@
             }
         }
 
-        // Retrieve canvas and its context
+        let captureWidth = 1280;
+        let captureHeight = 720;
+
+        // Check telemetry once when page loads, store the capture resolution
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const resp = await fetch('/camera-telemetry');
+                const data = await resp.json();
+                const [w, h] = data.resolution.split('x').map(v => parseInt(v));
+                captureWidth = w;
+                captureHeight = h;
+                console.log('Capture resolution:', w, h);
+            } catch (err) {
+                console.warn('Failed to retrieve camera resolution, fallback 1280x720', err);
+            }
+        });
+
+        // Retrieve canvas and context
         const canvas = document.getElementById('boundingCanvas');
         const ctx = canvas.getContext('2d');
-        
+
+        // The displayed <img> size
+        const displayWidth = canvas.width;   // e.g. 640
+        const displayHeight = canvas.height; // e.g. 360
+
         let isDrawing = false;
         let startX = 0, startY = 0;
         let endX = 0, endY = 0;
@@ -598,14 +619,15 @@
             ctx.strokeRect(startX, startY, endX - startX, endY - startY);
         }
 
-        // Adjust "Start Tracking" to ensure int coords + no negatives
+        // Adjust "Start Tracking" to scale up bounding box
         document.getElementById('startBtn').addEventListener('click', async () => {
-            // Compute top-left corner
+            // Compute user-drawn box
             const x1 = Math.round(startX);
             const y1 = Math.round(startY);
             const x2 = Math.round(endX);
             const y2 = Math.round(endY);
 
+            // Convert to top-left corner with positive width/height
             const finalX = Math.min(x1, x2);
             const finalY = Math.min(y1, y2);
             const finalW = Math.abs(x2 - x1);
@@ -617,8 +639,25 @@
                 return;
             }
 
+            // Calculate scaling based on capture vs. displayed resolution
+            const scaleX = captureWidth / displayWidth;
+            const scaleY = captureHeight / displayHeight;
+
+            // Scale the bounding box to match the camera's capture resolution
+            const scaledX = Math.round(finalX * scaleX);
+            const scaledY = Math.round(finalY * scaleY);
+            const scaledW = Math.round(finalW * scaleX);
+            const scaledH = Math.round(finalH * scaleY);
+
             // Send to server
-            const bbox = { x: finalX, y: finalY, w: finalW, h: finalH };
+            const bbox = {
+                x: scaledX,
+                y: scaledY,
+                w: scaledW,
+                h: scaledH
+            };
+            console.log('Scaled BBox:', bbox);
+
             try {
                 const res = await fetch("/start-tracking", {
                     method: "POST",

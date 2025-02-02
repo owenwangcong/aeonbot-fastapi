@@ -1,3 +1,6 @@
+# Comment out or remove the Picamera2 import:
+# from picamera2 import Picamera2
+
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
@@ -5,30 +8,35 @@ import threading
 import time
 import sys
 import queue
-from picamera2 import Picamera2
 import cv2
 import numpy as np
 
 class GStreamerCamera:
+    # Remove any _global_picam2 references
+    # _global_picam2 = None  # (delete this)
+
     def __init__(self):
         Gst.init(None)
-        
-        # Initialize Picamera2 to get supported resolutions
-        self.picam2 = Picamera2()
+
+        # Delete code that initializes Picamera2
+        # if not GStreamerCamera._global_picam2:
+        #     GStreamerCamera._global_picam2 = Picamera2()
+        # self.picam2 = GStreamerCamera._global_picam2
+
+        # Instead, just store a static list of common resolutions:
         self.supported_resolutions = self._get_supported_resolutions()
         print("Supported resolutions:", self.supported_resolutions)
-        
+
         print("Initializing GStreamer Camera...")
-        
-        # Create a queue for frames
+
         self.frame_queue = queue.Queue(maxsize=10)
-        
+
         self.current_width = 1280
         self.current_height = 720
         self.pipeline = None
         self.create_pipeline()
 
-        # Add telemetry tracking
+        # Telemetry
         self.frame_count = 0
         self.start_time = time.time()
         self.current_fps = 0
@@ -36,87 +44,118 @@ class GStreamerCamera:
         self.resolution = "1280x720"
         self.frame_format = "JPEG"
 
-        # Add instance variables for tracking
+        # Tracking
         self.tracker = None
         self.tracking_active = False
         self.tracked_bbox = (0, 0, 0, 0)
 
     def _get_supported_resolutions(self):
-        """Get list of supported resolutions from camera."""
-        try:
-            # Get all sensor modes
-            sensor_modes = self.picam2.sensor_modes
-            resolutions = set()  # Use set to avoid duplicates
-            
-            # Add resolutions from sensor modes
-            for mode in sensor_modes:
-                width, height = mode['size']
-                resolutions.add((width, height))
-            
-            # Add some common resolutions that are usually supported through scaling
-            common_resolutions = [
-                (640, 480),   # VGA
-                (1280, 720),  # HD
-                (1920, 1080), # Full HD
-            ]
-            
-            for res in common_resolutions:
-                if res[0] <= max(r[0] for r in resolutions) and \
-                   res[1] <= max(r[1] for r in resolutions):
-                    resolutions.add(res)
-            
-            # Convert to sorted list
-            return sorted(list(resolutions), key=lambda x: x[0] * x[1])
-            
-        except Exception as e:
-            print(f"Error getting supported resolutions: {e}", file=sys.stderr)
-            # Return some safe default resolutions
-            return [(640, 480), (1280, 720), (1920, 1080)]
-        finally:
-            if hasattr(self, 'picam2'):
-                self.picam2.close()
+        """
+        Return a static list of common resolutions.
+        Using libcamerasrc for capture, so no direct Picamera2.
+        """
+        return [
+            (640, 480),    # VGA
+            (1280, 720),   # HD
+            (1920, 1080),  # Full HD
+        ]
 
     def create_pipeline(self):
-        # Stop existing pipeline if it exists
+        # If pipeline exists, stop it
         if self.pipeline:
             self.pipeline.set_state(Gst.State.NULL)
 
-        # Create new pipeline with current resolution
+        # We'll keep using libcamerasrc in the pipeline
         self.pipeline_string = (
             f'libcamerasrc ! '
             f'video/x-raw,format=RGBx,width={self.current_width},height={self.current_height},framerate=30/1 ! '
             f'videoconvert ! jpegenc quality=85 ! '
             f'appsink name=sink emit-signals=true sync=false'
         )
-        
+
         try:
             self.pipeline = Gst.parse_launch(self.pipeline_string)
             self.sink = self.pipeline.get_by_name('sink')
-            
             if not self.sink:
                 raise Exception("Failed to create sink element")
-            
-            # Connect to the new-sample signal
+
             self.sink.connect("new-sample", self._new_sample)
-            
             self.bus = self.pipeline.get_bus()
             self.bus.add_signal_watch()
-            
-            # Start pipeline
+
             ret = self.pipeline.set_state(Gst.State.PLAYING)
             if ret == Gst.StateChangeReturn.FAILURE:
                 raise Exception("Failed to start pipeline")
-            
+
             # Wait for pipeline to start
             ret = self.pipeline.get_state(5 * Gst.SECOND)
             if ret[0] != Gst.StateChangeReturn.SUCCESS:
                 raise Exception("Pipeline failed to start")
-            
+
             return True
-            
+
         except Exception as e:
             print(f"Pipeline creation failed: {e}", file=sys.stderr)
             return False
+
+    def _new_sample(self, sink):
+        sample = sink.emit("pull-sample")
+        if sample:
+            self.frame_count += 1
+            elapsed_time = time.time() - self.start_time
+            if elapsed_time >= 1.0:
+                self.current_fps = self.frame_count / elapsed_time
+                self.frame_count = 0
+                self.start_time = time.time()
+
+            buffer = sample.get_buffer()
+            success, map_info = buffer.map(Gst.MapFlags.READ)
+            if success:
+                data = bytes(map_info.data)
+                buffer.unmap(map_info)
+                try:
+                    self.frame_queue.put_nowait(data)
+                except queue.Full:
+                    pass
+        return Gst.FlowReturn.OK
+
+    def generate_frames(self):
+        print("Starting frame generation...")
+        while True:
+            try:
+                data = self.frame_queue.get(timeout=5)
+                frame_cv = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+
+                # If tracking is active, always draw the bounding box in green
+                if self.tracking_active and self.tracker is not None:
+                    success, box = self.tracker.update(frame_cv)
+                    if success:
+                        (x, y, w, h) = [int(v) for v in box]
+                        self.tracked_bbox = (x, y, w, h)
+                    else:
+                        cv2.putText(frame_cv, "Tracking lost", (20, 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+                # Always draw the last known tracked_bbox in green
+                (bx, by, bw, bh) = self.tracked_bbox
+                cv2.rectangle(frame_cv, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
+
+                ret, buffer = cv2.imencode('.jpg', frame_cv)
+                if not ret:
+                    continue
+
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+                )
+
+            except queue.Empty:
+                time.sleep(0.1)
+                continue
+            except Exception as e:
+                print(f"Error in generate_frames: {e}", file=sys.stderr)
+                time.sleep(0.1)
+                continue
 
     def set_resolution(self, width: int, height: int):
         """Change the camera resolution."""
@@ -137,30 +176,6 @@ class GStreamerCamera:
         except Exception as e:
             print(f"Failed to set resolution: {e}", file=sys.stderr)
             return False
-
-    def _new_sample(self, sink):
-        sample = sink.emit("pull-sample")
-        if sample:
-            # Update frame count and FPS calculation
-            self.frame_count += 1
-            elapsed_time = time.time() - self.start_time
-            if elapsed_time >= 1.0:  # Update FPS every second
-                self.current_fps = self.frame_count / elapsed_time
-                self.frame_count = 0
-                self.start_time = time.time()
-
-            buffer = sample.get_buffer()
-            success, map_info = buffer.map(Gst.MapFlags.READ)
-            if success:
-                # Convert memoryview to bytes
-                data = bytes(map_info.data)
-                buffer.unmap(map_info)
-                try:
-                    # Put the frame in the queue, drop if queue is full
-                    self.frame_queue.put_nowait(data)
-                except queue.Full:
-                    pass  # Drop frame if queue is full
-        return Gst.FlowReturn.OK
 
     def _bus_monitor(self):
         while self.running:
@@ -232,42 +247,6 @@ class GStreamerCamera:
         self.tracking_active = False
         self.tracked_bbox = (0, 0, 0, 0)
         print("Tracking has been reset.")
-
-    def generate_frames(self):
-        print("Starting frame generation...")
-        while True:
-            try:
-                data = self.frame_queue.get(timeout=5)
-                frame_cv = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-
-                # If tracking is active, update the tracker
-                if self.tracking_active and self.tracker is not None:
-                    success, box = self.tracker.update(frame_cv)
-                    if success:
-                        (x, y, w, h) = [int(v) for v in box]
-                        self.tracked_bbox = (x, y, w, h)
-                        # Draw bounding box
-                        cv2.rectangle(frame_cv, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    else:
-                        cv2.putText(frame_cv, "Tracking lost", (20, 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                
-                # Convert back to JPEG bytes
-                ret, buffer = cv2.imencode('.jpg', frame_cv)
-                if not ret:
-                    continue
-
-                # Construct multipart response
-                frame = b'--frame\r\n' \
-                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n'
-                yield frame
-            except queue.Empty:
-                time.sleep(0.1)
-                continue
-            except Exception as e:
-                print(f"Error in generate_frames: {e}", file=sys.stderr)
-                time.sleep(0.1)
-                continue
 
     def get_telemetry(self):
         """Get camera telemetry including supported resolutions."""
