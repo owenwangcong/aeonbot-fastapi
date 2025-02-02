@@ -4,6 +4,9 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+import json
 
 from gstreamer_camera import GStreamerCamera
 
@@ -118,3 +121,34 @@ async def update_settings(request: Request):
     if 'encoder' in data:
         camera.set_pipeline_settings(encoder=data['encoder'])
     return JSONResponse({'status': 'success'})
+
+@app.get("/api/camera-events")
+async def camera_events(request: Request):
+    """
+    Server-sent events endpoint for camera updates.
+    Sends periodic updates about camera status, resolution, and FPS.
+    """
+    async def event_generator():
+        while True:
+            if await request.is_disconnected():
+                break
+
+            # Get current camera telemetry
+            telemetry = {
+                "fps": camera.get_fps() if hasattr(camera, 'get_fps') else 0,
+                "resolution": camera.get_current_resolution() if hasattr(camera, 'get_current_resolution') else "unknown",
+                "format": camera.get_current_format() if hasattr(camera, 'get_current_format') else "unknown",
+                "supported_resolutions": camera.supported_resolutions if hasattr(camera, 'supported_resolutions') else [],
+                "supported_formats": camera.supported_formats if hasattr(camera, 'supported_formats') else [],
+                "current_encoder": camera.current_encoder if hasattr(camera, 'current_encoder') else "unknown",
+                "supported_encoders": camera.supported_encoders if hasattr(camera, 'supported_encoders') else {}
+            }
+
+            yield {
+                "event": "message",
+                "data": json.dumps(telemetry)
+            }
+            
+            await asyncio.sleep(1)  # Send updates every second
+
+    return EventSourceResponse(event_generator())

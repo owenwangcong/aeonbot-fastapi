@@ -191,6 +191,7 @@
 
         /* Add a container that groups the video, info, and controls together */
         .camera-box {
+            position: relative;
             display: inline-block;
             background-color: #f9f9f9;
             padding: 15px;
@@ -216,6 +217,20 @@
         [title] {
             position: relative;
             cursor: help;
+        }
+
+        #boundingCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: auto;
+            z-index: 10;
+        }
+        
+        #videoFeed {
+            display: block;
+            max-width: 100%;
+            height: auto;
         }
     </style>
 </head>
@@ -254,9 +269,14 @@
                     
                     <!-- Pipeline settings -->
                     <div class="pipeline-settings" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;">
+                        <label for="encoder">Encoder:</label>
+                        <select id="encoder" name="encoder" class="camera-control-select">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+
                         <label for="color_format">Format:</label>
                         <select id="color_format" name="color_format" class="camera-control-select">
-                            <!-- Options will be populated dynamically via JavaScript -->
+                            <!-- Options will be populated dynamically -->
                         </select>
                         
                         <label for="jpeg_quality">Quality:</label>
@@ -309,14 +329,6 @@
                 <p>⬇️ DOWN ARROW: Backward</p>
                 <p>⬅️ LEFT ARROW: Turn Left</p>
                 <p>➡️ RIGHT ARROW: Turn Right</p>
-            </div>
-
-            <!-- Add this where you want the encoder selection to appear -->
-            <div class="control-group">
-                <label for="encoder">Video Encoder:</label>
-                <select id="encoder" onchange="updateEncoder(this.value)">
-                    <!-- Will be populated dynamically -->
-                </select>
             </div>
         </div>
     </div>
@@ -563,17 +575,197 @@
         // Initialize joystick after page loads
         const joystick = new Joystick(document.getElementById('joystick'));
 
+        // Add these functions before the updateTelemetry function
+        function updateResolutionOptions(resolutions) {
+            const select = document.getElementById('resolutionSelect');
+            const currentValue = select.value;  // Store current selection
+            
+            // Clear existing options
+            select.innerHTML = '';
+            
+            // Add new options
+            resolutions.forEach(resolution => {
+                const option = document.createElement('option');
+                option.value = resolution;
+                option.text = resolution;
+                select.appendChild(option);
+            });
+            
+            // Restore previous selection if it exists in new options
+            if (resolutions.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        function updateFormatOptions(formats) {
+            const select = document.getElementById('color_format');
+            const currentValue = select.value;  // Store current selection
+            
+            // Clear existing options
+            select.innerHTML = '';
+            
+            // Add new options
+            formats.forEach(format => {
+                const option = document.createElement('option');
+                option.value = format;
+                option.text = format;
+                select.appendChild(option);
+            });
+            
+            // Restore previous selection if it exists in new options
+            if (formats.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
+        // Add these variables at the start of your script section
+        let isDrawing = false;
+        let startX = 0;
+        let startY = 0;
+        let endX = 0;
+        let endY = 0;
+        let captureWidth = 640;  // Default values, will be updated from telemetry
+        let captureHeight = 480;
+
+        // Add this function to ensure canvas matches video dimensions
+        function updateCanvasSize() {
+            const videoFeed = document.getElementById('videoFeed');
+            const canvas = document.getElementById('boundingCanvas');
+            
+            // Match canvas size to video feed size
+            canvas.width = videoFeed.clientWidth;
+            canvas.height = videoFeed.clientHeight;
+            
+            // Ensure canvas is positioned correctly
+            canvas.style.position = 'absolute';
+            canvas.style.left = videoFeed.offsetLeft + 'px';
+            canvas.style.top = videoFeed.offsetTop + 'px';
+            
+            console.log(`Canvas resized to ${canvas.width}x${canvas.height}`);
+        }
+
+        // Initialize canvas and context
+        const canvas = document.getElementById('boundingCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Call updateCanvasSize when video loads and on window resize
+        document.getElementById('videoFeed').onload = updateCanvasSize;
+        window.addEventListener('resize', updateCanvasSize);
+
+        // Drawing functions
+        function startDrawing(e) {
+            e.preventDefault();  // Prevent default behavior
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+            endX = startX;
+            endY = startY;
+            
+            // Clear any existing box
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault();  // Prevent default behavior
+            
+            const rect = canvas.getBoundingClientRect();
+            endX = e.clientX - rect.left;
+            endY = e.clientY - rect.top;
+            
+            // Clear previous drawing
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw new rectangle
+            ctx.beginPath();
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.rect(
+                Math.min(startX, endX),
+                Math.min(startY, endY),
+                Math.abs(endX - startX),
+                Math.abs(endY - startY)
+            );
+            ctx.stroke();
+        }
+
+        function endDrawing(e) {
+            if (!isDrawing) return;
+            e.preventDefault();  // Prevent default behavior
+            isDrawing = false;
+        }
+
+        // Touch event handlers
+        function handleTouchStart(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousedown', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            startDrawing(mouseEvent);
+        }
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const mouseEvent = new MouseEvent('mousemove', {
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
+            draw(mouseEvent);
+        }
+
+        // Add event listeners
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', endDrawing);
+        canvas.addEventListener('mouseleave', endDrawing);
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+        canvas.addEventListener('touchend', endDrawing);
+
+        // Update the video container CSS
+        document.querySelector('.camera-box').style.position = 'relative';
+
+        // Call updateCanvasSize immediately
+        updateCanvasSize();
+
+        // Update the telemetry function to also update capture dimensions
         function updateTelemetry() {
             fetch('/api/telemetry')
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('fpsValue').textContent = data.fps;
-                    document.getElementById('resolutionValue').textContent = data.resolution;
-                    document.getElementById('formatValue').textContent = data.format;
+                    document.getElementById('fpsValue').textContent = data.fps || '--';
+                    document.getElementById('resolutionValue').textContent = data.resolution || '--';
+                    document.getElementById('formatValue').textContent = data.format || '--';
                     
-                    // Update resolution options if available
-                    if (data.supported_resolutions) {
-                        updateResolutionOptions(data.supported_resolutions);
+                    // Update resolution select if we have supported resolutions
+                    if (data.supported_resolutions && Array.isArray(data.supported_resolutions)) {
+                        const select = document.getElementById('resolutionSelect');
+                        const currentValue = select.value;
+                        
+                        // Only update if we have new options
+                        if (select.options.length !== data.supported_resolutions.length) {
+                            select.innerHTML = '';
+                            data.supported_resolutions.forEach(resolution => {
+                                const option = document.createElement('option');
+                                option.value = resolution;
+                                option.text = resolution;
+                                if (resolution === data.resolution) {
+                                    option.selected = true;
+                                }
+                                select.appendChild(option);
+                            });
+                        }
+                    }
+                    
+                    // Update capture dimensions if resolution is available
+                    if (data.resolution) {
+                        const [width, height] = data.resolution.split('x').map(Number);
+                        captureWidth = width;
+                        captureHeight = height;
                     }
                     
                     // Update format options if available
@@ -601,163 +793,15 @@
         // Update telemetry every second
         setInterval(updateTelemetry, 1000);
 
-        // Add resolution control functionality
-        document.getElementById('applyResolution').addEventListener('click', function() {
-            const resolution = document.getElementById('resolutionSelect').value;
-            
-            // Show loading state
-            this.disabled = true;
-            this.textContent = 'Applying...';
-            
-            fetch('/set-resolution', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ resolution: resolution })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Reload the video feed
-                    const videoFeed = document.querySelector('.camera-container img');
-                    videoFeed.src = '/video-feed?' + new Date().getTime();
-                    
-                    // Update resolution in overlay
-                    document.getElementById('resolutionValue').textContent = resolution;
-                } else {
-                    showPopup('Failed to change resolution: ' + data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showPopup('Failed to change resolution');
-            })
-            .finally(() => {
-                // Reset button state
-                this.disabled = false;
-                this.textContent = 'Apply Resolution';
-            });
-        });
-
-        function updateResolutionOptions(resolutions) {
-            const select = document.getElementById('resolutionSelect');
-            const currentSelection = select.value; // Store current user selection
-            
-            // Only update options if they've changed
-            const currentOptions = Array.from(select.options).map(opt => opt.value);
-            const hasChanged = resolutions.length !== currentOptions.length || 
-                              !resolutions.every(res => currentOptions.includes(res));
-            
-            if (hasChanged) {
-                select.innerHTML = ''; // Clear existing options
-                
-                resolutions.forEach(resolution => {
-                    const option = document.createElement('option');
-                    option.value = resolution;
-                    option.textContent = resolution;
-                    
-                    // Prioritize keeping user's selection, fall back to current camera resolution
-                    if (resolution === currentSelection) {
-                        option.selected = true;
-                    } else if (!currentSelection && resolution === document.getElementById('resolutionValue').textContent) {
-                        option.selected = true;
-                    }
-                    
-                    select.appendChild(option);
-                });
-            }
-        }
-
-        function updateFormatOptions(formats) {
-            const select = document.getElementById('color_format');
-            const currentFormat = select.value; // Store current selection
-            
-            // Only update if formats have changed
-            const currentOptions = Array.from(select.options).map(opt => opt.value);
-            const hasChanged = formats.length !== currentOptions.length || 
-                              !formats.every(fmt => currentOptions.includes(fmt));
-            
-            if (hasChanged) {
-                select.innerHTML = ''; // Clear existing options
-                
-                formats.forEach(format => {
-                    const option = document.createElement('option');
-                    option.value = format;
-                    option.textContent = format;
-                    
-                    // Keep current selection if possible
-                    if (format === currentFormat) {
-                        option.selected = true;
-                    }
-                    
-                    select.appendChild(option);
-                });
-            }
-        }
-
-        let captureWidth = 1280;
-        let captureHeight = 720;
-
-        // Check telemetry once when page loads, store the capture resolution
-        document.addEventListener('DOMContentLoaded', async function() {
-            try {
-                const resp = await fetch('/camera-telemetry');
-                const data = await resp.json();
-                const [w, h] = data.resolution.split('x').map(v => parseInt(v));
-                captureWidth = w;
-                captureHeight = h;
-                console.log('Capture resolution:', w, h);
-            } catch (err) {
-                console.warn('Failed to retrieve camera resolution, fallback 1280x720', err);
-            }
-        });
-
-        // Retrieve canvas and context
-        const canvas = document.getElementById('boundingCanvas');
-        const ctx = canvas.getContext('2d');
-
-        // The displayed <img> size
-        const displayWidth = canvas.width;   // e.g. 640
-        const displayHeight = canvas.height; // e.g. 360
-
-        let isDrawing = false;
-        let startX = 0, startY = 0;
-        let endX = 0, endY = 0;
-
-        canvas.addEventListener('mousedown', (e) => {
-            isDrawing = true;
-            [startX, startY] = getMousePos(canvas, e);
-            [endX, endY] = [startX, startY];
-        });
-
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return;
-            [endX, endY] = getMousePos(canvas, e);
-            drawBox();
-        });
-
-        canvas.addEventListener('mouseup', () => {
-            isDrawing = false;
-        });
-
-        function getMousePos(canvasElem, evt) {
-            const rect = canvasElem.getBoundingClientRect();
-            return [
-                evt.clientX - rect.left,
-                evt.clientY - rect.top
-            ];
-        }
-
-        function drawBox() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = 'red';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(startX, startY, endX - startX, endY - startY);
-        }
-
-        // Adjust "Start Tracking" to scale up bounding box
+        // Update the start tracking code to clear the canvas after starting tracking
         document.getElementById('startBtn').addEventListener('click', async () => {
+            const canvas = document.getElementById('boundingCanvas');
+            const videoFeed = document.getElementById('videoFeed');
+            
+            // Get the current display dimensions
+            const displayWidth = videoFeed.clientWidth;
+            const displayHeight = videoFeed.clientHeight;
+            
             // Compute user-drawn box
             const x1 = Math.round(startX);
             const y1 = Math.round(startY);
@@ -776,7 +820,7 @@
                 return;
             }
 
-            // Calculate scaling based on capture vs. displayed resolution
+            // Calculate scaling based on current capture vs. displayed resolution
             const scaleX = captureWidth / displayWidth;
             const scaleY = captureHeight / displayHeight;
 
@@ -786,6 +830,13 @@
             const scaledW = Math.round(finalW * scaleX);
             const scaledH = Math.round(finalH * scaleY);
 
+            // Log the scaling calculations for debugging
+            console.log('Display dimensions:', displayWidth, displayHeight);
+            console.log('Capture dimensions:', captureWidth, captureHeight);
+            console.log('Scale factors:', scaleX, scaleY);
+            console.log('Original bbox:', finalX, finalY, finalW, finalH);
+            console.log('Scaled bbox:', scaledX, scaledY, scaledW, scaledH);
+
             // Send to server
             const bbox = {
                 x: scaledX,
@@ -793,7 +844,6 @@
                 w: scaledW,
                 h: scaledH
             };
-            console.log('Scaled BBox:', bbox);
 
             try {
                 const res = await fetch("/start-tracking", {
@@ -804,6 +854,10 @@
                 const result = await res.json();
                 console.log(result);
                 showPopup(result.message || "Tracking started");
+                
+                // Clear the canvas after successfully starting tracking
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
             } catch (err) {
                 console.error(err);
                 showPopup("Error starting tracking");
@@ -844,6 +898,7 @@
             const formData = new FormData();
             formData.append('color_format', document.getElementById('color_format').value);
             formData.append('jpeg_quality', document.getElementById('jpeg_quality').value);
+            formData.append('encoder', document.getElementById('encoder').value);
             
             try {
                 const response = await fetch('/set_pipeline_settings', {
@@ -854,6 +909,9 @@
                 const result = await response.json();
                 if (result.success) {
                     showPopup('Pipeline settings updated successfully');
+                    // Reload the video feed with a cache-busting parameter
+                    const videoFeed = document.getElementById('videoFeed');
+                    videoFeed.src = '/video-feed?' + new Date().getTime();
                 } else {
                     showPopup('Failed to update pipeline settings');
                 }
@@ -881,6 +939,56 @@
             })
             .catch(error => console.error('Error updating encoder:', error));
         }
+
+        // Add or update the resolution change handler
+        document.getElementById('applyResolution').addEventListener('click', function() {
+            const resolution = document.getElementById('resolutionSelect').value;
+            if (!resolution) {
+                showPopup("Please select a resolution");
+                return;
+            }
+            
+            // Show loading state
+            this.disabled = true;
+            this.textContent = 'Applying...';
+            
+            fetch('/set-resolution', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ resolution: resolution })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Reload the video feed with a cache-busting parameter
+                    const videoFeed = document.getElementById('videoFeed');
+                    videoFeed.src = '/video-feed?' + new Date().getTime();
+                    
+                    // Update resolution in overlay
+                    document.getElementById('resolutionValue').textContent = resolution;
+                    
+                    // Update canvas size after resolution change
+                    videoFeed.onload = function() {
+                        updateCanvasSize();
+                    };
+                    
+                    showPopup('Resolution changed successfully');
+                } else {
+                    showPopup('Failed to change resolution: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showPopup('Failed to change resolution: Network error');
+            })
+            .finally(() => {
+                // Reset button state
+                this.disabled = false;
+                this.textContent = 'Apply Resolution';
+            });
+        });
     </script>
 </body>
 </html> 

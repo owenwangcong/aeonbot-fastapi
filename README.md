@@ -24,6 +24,8 @@ sudo apt install -y libgstreamer1.0-dev     libgstreamer-plugins-base1.0-dev    
 ### for changing the pipeline settings
 sudo pip install python-multipart --break-system-packages
 
+sudo pip install sse-starlette --break-system-packages
+
 ### Copy file to Raspberry Pi
 for %f in (*.sh) do powershell -Command "(Get-Content \"%f\") -replace '`r`n', '`n' | Set-Content \"%f\""
 scp -rp ./* aeonics@10.0.0.101:/home/aeonics/aeonbot-fastapi/
