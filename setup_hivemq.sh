@@ -111,7 +111,7 @@ sleep 5
 # Check service status
 echo "Checking HiveMQ service status..."
 sudo systemctl status hivemq
-ssss
+
 echo "=== Installation Complete ==="
 echo "HiveMQ is now running on:"
 echo "MQTT port: 1883"

@@ -320,7 +320,6 @@ class GStreamerCamera:
                 print(f"Error in bus monitor: {e}", file=sys.stderr)
 
     def start_tracking(self, x: int, y: int, w: int, h: int) -> bool:
-        """Initialize the CSRT tracker with the given bounding box."""
         try:
             # Wait up to 1 second for a frame if the queue is empty
             initial_frame = None
@@ -340,13 +339,16 @@ class GStreamerCamera:
             nparr = np.frombuffer(initial_frame, np.uint8)
             frame_cv = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-            # Create and initialize the CSRT tracker
-            self.tracker = cv2.legacy.TrackerCSRT_create()
-            self.tracker.init(frame_cv, (x, y, w, h))
+            # Create and initialize the tracker
+            self.tracker = self.get_tracker()
+            if self.tracker is None:
+                print("No suitable tracker available", file=sys.stderr)
+                return False
 
+            self.tracker.init(frame_cv, (x, y, w, h))
             self.tracked_bbox = (x, y, w, h)
             self.tracking_active = True
-            print("CSRT tracker initialized with bbox:", self.tracked_bbox)
+            print(f"{type(self.tracker).__name__} tracker initialized with bbox:", self.tracked_bbox)
             return True
         except Exception as e:
             print(f"Error starting tracker: {e}", file=sys.stderr)
@@ -372,6 +374,30 @@ class GStreamerCamera:
             "supported_encoders": self.supported_encoders
         }
         return telemetry
+
+    def get_tracker(self):
+        try:
+            # Try CSRT first (most accurate)
+            return cv2.TrackerCSRT_create()
+        except AttributeError:
+            try:
+                # Fall back to MOSSE if CSRT isn't available
+                return cv2.TrackerMOSSE_create()
+            except AttributeError:
+                try:
+                    # Fall back to KCF if MOSSE isn't available
+                    return cv2.TrackerKCF_create()
+                except AttributeError:
+                    try:
+                        # Fall back to Boosting if KCF isn't available
+                        return cv2.TrackerBoosting_create()
+                    except AttributeError:
+                        try:
+                            # Fall back to MIL if Boosting isn't available
+                            return cv2.TrackerMIL_create()
+                        except AttributeError:
+                            print("No suitable tracker available in this OpenCV version", file=sys.stderr)
+                            return None
 
     def __del__(self):
         print("Cleaning up camera resources...")
