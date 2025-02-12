@@ -107,15 +107,18 @@ void handleJoystickCommand(float angle, float speed) {
     // Convert angle to radians
     float angleRad = angle * PI / 180.0;
     
-    // Calculate motor speeds based on angle
-    // 0° (up) = forward (both motors forward)
-    // 90° (right) = turn right (left forward, right backward)
-    // 180° (down) = backward (both motors backward)
-    // 270° (left) = turn left (left backward, right forward)
+    // Calculate forward/backward component (cosine) and turning component (sine)
+    float forwardComponent = cos(angleRad);
+    float turnComponent = sin(angleRad);
     
-    // Calculate speeds using cosine for forward/backward and sine for turning
-    float leftSpeed = pwmSpeed * (cos(angleRad) + sin(angleRad));   // Changed formula
-    float rightSpeed = pwmSpeed * (cos(angleRad) - sin(angleRad));  // Changed formula
+    // If moving backward (forwardComponent < 0), invert the turn component
+    if (forwardComponent < 0) {
+        turnComponent = -turnComponent;
+    }
+    
+    // Calculate motor speeds with turn component
+    float leftSpeed = pwmSpeed * (forwardComponent + turnComponent);
+    float rightSpeed = pwmSpeed * (forwardComponent - turnComponent);
     
     // Normalize speeds to stay within PWM range (-255 to 255)
     float maxMagnitude = max(abs(leftSpeed), abs(rightSpeed));
@@ -180,12 +183,24 @@ void handleMotorCommand(char *data, uint16_t len) {
             rightTarget = -speed;
         }
         else if (command == "left") {
-            leftTarget = -turnSpeed;
-            rightTarget = turnSpeed;
+            // When moving backward, invert the turn direction
+            if (leftTarget < 0 && rightTarget < 0) {
+                leftTarget = turnSpeed;
+                rightTarget = -turnSpeed;
+            } else {
+                leftTarget = -turnSpeed;
+                rightTarget = turnSpeed;
+            }
         }
         else if (command == "right") {
-            leftTarget = turnSpeed;
-            rightTarget = -turnSpeed;
+            // When moving backward, invert the turn direction
+            if (leftTarget < 0 && rightTarget < 0) {
+                leftTarget = -turnSpeed;
+                rightTarget = turnSpeed;
+            } else {
+                leftTarget = turnSpeed;
+                rightTarget = -turnSpeed;
+            }
         }
         else if (command == "stop") {
             leftTarget = 0;
