@@ -19,6 +19,12 @@
 #define R_INPUT_PIN_1 34
 #define R_INPUT_PIN_2 35
 
+// Add these pin definitions after the existing pin definitions
+#define SNOWBLOWER_F_PWM 15  // Forward PWM control pin for snowblower
+#define SNOWBLOWER_B_PWM 2   // Backward PWM control pin for snowblower
+#define SNOWBLOWER_ENC_1 22  // Encoder input 1 for snowblower
+#define SNOWBLOWER_ENC_2 23  // Encoder input 2 for snowblower
+
 // PWM parameters
 const uint32_t PWM_FREQUENCY  = 1000; // 1 kHz
 const uint8_t  PWM_RESOLUTION = 8;    // 8-bit resolution (0-255)
@@ -32,6 +38,19 @@ const uint8_t DUTY_100 = 255; // 100%
 // Add these constants after the PWM parameters
 const unsigned long RAMP_TIME = 100;  // Time to reach target speed in milliseconds
 const uint8_t RAMP_STEPS = 10;       // Number of steps for ramping
+
+// Add these speed constants for snowblower
+const uint8_t SNOWBLOWER_VERY_LOW = 51;   // 20%
+const uint8_t SNOWBLOWER_LOW = 77;        // 30%
+const uint8_t SNOWBLOWER_MEDIUM_LOW = 128; // 50%
+const uint8_t SNOWBLOWER_MEDIUM = 179;     // 70%
+const uint8_t SNOWBLOWER_MEDIUM_HIGH = 204; // 80%
+const uint8_t SNOWBLOWER_HIGH = 230;       // 90%
+const uint8_t SNOWBLOWER_VERY_HIGH = 255;  // 100%
+
+// Add snowblower ramping constants
+const unsigned long SNOWBLOWER_RAMP_TIME = 500;  // 500ms to reach target speed
+const uint8_t SNOWBLOWER_RAMP_STEPS = 20;       // Number of steps for ramping
 
 // Create a NeoPixel object
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -99,6 +118,78 @@ struct MotorState {
 MotorState leftMotor(L_F_PWM, L_B_PWM);
 MotorState rightMotor(R_F_PWM, R_B_PWM);
 
+// Add snowblower state structure
+struct SnowblowerState {
+    bool isRunning = false;
+    uint8_t speedLevel = SNOWBLOWER_HIGH;  // Default to high speed
+    uint8_t currentSpeed = 0;              // Current actual speed
+    unsigned long lastUpdate = 0;
+    bool isReversed = false;
+    
+    void setSpeed(uint8_t speed) {
+        speedLevel = speed;
+        if (isRunning) {
+            updateSpeed();
+        }
+    }
+    
+    void setDirection(bool reverse) {
+        isReversed = reverse;
+        if (isRunning) {
+            updateSpeed();
+        }
+    }
+    
+    void start() {
+        isRunning = true;
+        updateSpeed();
+    }
+    
+    void stop() {
+        isRunning = false;
+        currentSpeed = 0;  // Immediately set current speed to 0
+        // Immediately stop both PWM outputs
+        ledcWrite(SNOWBLOWER_F_PWM, 0);
+        ledcWrite(SNOWBLOWER_B_PWM, 0);
+        lastUpdate = millis();  // Reset timing
+    }
+    
+    void update() {
+        if (!isRunning) return;
+        
+        unsigned long now = millis();
+        unsigned long timeElapsed = now - lastUpdate;
+        int stepSize = (SNOWBLOWER_RAMP_TIME / SNOWBLOWER_RAMP_STEPS);
+        
+        if (timeElapsed >= stepSize) {
+            lastUpdate = now;
+            
+            // Only ramp up, no ramping down
+            if (currentSpeed < speedLevel) {
+                currentSpeed += max(1, (speedLevel - currentSpeed) / SNOWBLOWER_RAMP_STEPS);
+                if (currentSpeed > speedLevel) currentSpeed = speedLevel;
+                
+                // Apply the new speed
+                if (isReversed) {
+                    ledcWrite(SNOWBLOWER_F_PWM, 0);
+                    ledcWrite(SNOWBLOWER_B_PWM, currentSpeed);
+                } else {
+                    ledcWrite(SNOWBLOWER_F_PWM, currentSpeed);
+                    ledcWrite(SNOWBLOWER_B_PWM, 0);
+                }
+            }
+        }
+    }
+    
+    private:
+    void updateSpeed() {
+        lastUpdate = millis();  // Reset timing for ramping
+    }
+};
+
+// Add global snowblower state
+SnowblowerState snowblower;
+
 // Add this function before handleMotorCommand
 void handleJoystickCommand(float angle, float speed) {
     // Convert speed from percentage to PWM value (0-255)
@@ -148,7 +239,29 @@ void handleMotorCommand(char *data, uint16_t len) {
     
     String command = message.substring(0, firstColon);
     
-    if (command == "joystick") {
+    if (command == "snowblower") {
+        // Parse snowblower command: "snowblower:action:value"
+        int secondColon = message.indexOf(':', firstColon + 1);
+        if (secondColon == -1) return;
+        
+        String action = message.substring(firstColon + 1, secondColon);
+        String value = message.substring(secondColon + 1);
+        
+        if (action == "power") {
+            if (value == "on") snowblower.start();
+            else if (value == "off") snowblower.stop();
+        }
+        else if (action == "speed") {
+            if (value == "very_low") snowblower.setSpeed(SNOWBLOWER_VERY_LOW);
+            else if (value == "low") snowblower.setSpeed(SNOWBLOWER_LOW);
+            else if (value == "medium_low") snowblower.setSpeed(SNOWBLOWER_MEDIUM_LOW);
+            else if (value == "medium") snowblower.setSpeed(SNOWBLOWER_MEDIUM);
+            else if (value == "medium_high") snowblower.setSpeed(SNOWBLOWER_MEDIUM_HIGH);
+            else if (value == "high") snowblower.setSpeed(SNOWBLOWER_HIGH);
+            else if (value == "very_high") snowblower.setSpeed(SNOWBLOWER_VERY_HIGH);
+        }
+    }
+    else if (command == "joystick") {
         // Parse joystick command: "joystick:angle:speed"
         int secondColon = message.indexOf(':', firstColon + 1);
         if (secondColon == -1) return;
@@ -259,6 +372,14 @@ void setup() {
     // Setup MQTT subscription
     motorControl.setCallback(handleMotorCommand);
     mqtt.subscribe(&motorControl);
+
+    // Add snowblower PWM initialization
+    ledcAttach(SNOWBLOWER_F_PWM, PWM_FREQUENCY, PWM_RESOLUTION);
+    ledcAttach(SNOWBLOWER_B_PWM, PWM_FREQUENCY, PWM_RESOLUTION);
+    
+    // Initialize encoder pins
+    pinMode(SNOWBLOWER_ENC_1, INPUT);
+    pinMode(SNOWBLOWER_ENC_2, INPUT);
 }
 
 void MQTT_connect() {
@@ -311,6 +432,7 @@ void loop() {
         lastMotorUpdate = currentMillis;
         leftMotor.update();
         rightMotor.update();
+        snowblower.update();  // Add snowblower update
     }
 
     // Handle MQTT connection and maintenance

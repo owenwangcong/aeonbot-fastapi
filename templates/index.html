@@ -232,6 +232,94 @@
             max-width: 100%;
             height: auto;
         }
+
+        .snowblower-controls {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-radius: 8px;
+        }
+        
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+        }
+        
+        input:checked + .slider {
+            background-color: #4CAF50;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .slider.round {
+            border-radius: 34px;
+        }
+        
+        .slider.round:before {
+            border-radius: 50%;
+        }
+        
+        .speed-selection {
+            margin: 15px 0;
+        }
+        
+        .speed-select {
+            margin-top: 5px;
+            padding: 8px;
+            width: 180px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .speed-select option {
+            padding: 5px;
+            font-size: 14px;
+        }
+        
+        .keyboard-hint {
+            font-style: italic;
+            color: #666;
+            margin-top: 10px;
+        }
     </style>
 </head>
 
@@ -329,6 +417,37 @@
                 <p>⬇️ DOWN ARROW: Backward</p>
                 <p>⬅️ LEFT ARROW: Turn Left</p>
                 <p>➡️ RIGHT ARROW: Turn Right</p>
+            </div>
+
+            <div class="snowblower-controls">
+                <h3>Snowblower Control</h3>
+                
+                <!-- Power switch -->
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="snowblowerSwitch">
+                        <span class="slider round"></span>
+                    </label>
+                    <span>Power</span>
+                </div>
+                
+                <!-- Speed selection -->
+                <div class="speed-selection">
+                    <div>Speed Level:</div>
+                    <select id="snowblowerSpeed" class="speed-select">
+                        <option value="very_high">Very High (100%)</option>
+                        <option value="high">High (90%)</option>
+                        <option value="medium_high">Medium High (80%)</option>
+                        <option value="medium">Medium (70%)</option>
+                        <option value="medium_low">Medium Low (50%)</option>
+                        <option value="low">Low (30%)</option>
+                        <option value="very_low">Very Low (20%)</option>
+                    </select>
+                </div>
+                
+                <div class="keyboard-hint">
+                    <small>Press and hold CTRL key to activate snowblower</small>
+                </div>
             </div>
         </div>
     </div>
@@ -988,6 +1107,43 @@
                 this.disabled = false;
                 this.textContent = 'Apply Resolution';
             });
+        });
+
+        // Snowblower control
+        const snowblowerSwitch = document.getElementById('snowblowerSwitch');
+        const snowblowerSpeed = document.getElementById('snowblowerSpeed');
+        
+        function sendSnowblowerCommand(action, value) {
+            if (client.isConnected()) {
+                const message = new Paho.MQTT.Message(`snowblower:${action}:${value}`);
+                message.destinationName = "motor/control";
+                client.send(message);
+            }
+        }
+        
+        // Handle switch toggle
+        snowblowerSwitch.addEventListener('change', function() {
+            sendSnowblowerCommand('power', this.checked ? 'on' : 'off');
+        });
+        
+        // Handle speed selection
+        snowblowerSpeed.addEventListener('change', function() {
+            sendSnowblowerCommand('speed', this.value);
+        });
+        
+        // Handle Ctrl key for snowblower control
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Control' && !event.repeat) {
+                snowblowerSwitch.checked = true;
+                sendSnowblowerCommand('power', 'on');
+            }
+        });
+        
+        document.addEventListener('keyup', function(event) {
+            if (event.key === 'Control') {
+                snowblowerSwitch.checked = false;
+                sendSnowblowerCommand('power', 'off');
+            }
         });
     </script>
 </body>
