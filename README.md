@@ -32,3 +32,7 @@ scp -rp ./* aeonics@10.0.0.101:/home/aeonics/aeonbot-fastapi/
 
 #### Then on rp5
 chmod +x *.sh | dos2unix *.sh
+
+###
+sudo systemctl start aeonbot.service
+sudo systemctl stop aeonbot.service
