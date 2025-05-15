@@ -8,7 +8,7 @@
 #define LED_PIN 5 // Connect to the DIN pin of the WS2812 stick
 
 // Define control pins connected to BTS7960
-#define L_F_PWM 16  // Forward PWM control pin
+#define   L_F_PWM 16  // Forward PWM control pin
 #define L_B_PWM 17  // Reverse PWM control pin
 #define R_F_PWM 25  // Forward PWM control pin
 #define R_B_PWM 26  // Reverse PWM control pin
@@ -36,7 +36,7 @@ const uint8_t DUTY_75  = 192; // ~75%
 const uint8_t DUTY_100 = 255; // 100%
 
 // Add these constants after the PWM parameters
-const unsigned long RAMP_TIME = 100;  // Time to reach target speed in milliseconds
+const unsigned long RAMP_TIME = 1000;  // Time to reach target speed in milliseconds
 const uint8_t RAMP_STEPS = 10;       // Number of steps for ramping
 
 // Add these speed constants for snowblower
@@ -298,8 +298,8 @@ void handleMotorCommand(char *data, uint16_t len) {
         else if (command == "left") {
             // When moving backward, invert the turn direction
             if (leftTarget < 0 && rightTarget < 0) {
-                leftTarget = turnSpeed;
-                rightTarget = -turnSpeed;
+                leftTarget = -turnSpeed;
+                rightTarget = turnSpeed;
             } else {
                 leftTarget = -turnSpeed;
                 rightTarget = turnSpeed;
@@ -308,8 +308,8 @@ void handleMotorCommand(char *data, uint16_t len) {
         else if (command == "right") {
             // When moving backward, invert the turn direction
             if (leftTarget < 0 && rightTarget < 0) {
-                leftTarget = -turnSpeed;
-                rightTarget = turnSpeed;
+                leftTarget = turnSpeed;
+                rightTarget = -turnSpeed;
             } else {
                 leftTarget = turnSpeed;
                 rightTarget = -turnSpeed;

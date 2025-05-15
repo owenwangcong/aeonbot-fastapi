@@ -320,6 +320,14 @@
             color: #666;
             margin-top: 10px;
         }
+
+        /* Add touch-action CSS to prevent unwanted scrolling */
+        .button {
+            touch-action: none;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
     </style>
 </head>
 
@@ -527,19 +535,45 @@
 
         Object.entries(buttons).forEach(([btnId, command]) => {
             const btn = document.getElementById(btnId);
-            ['mousedown', 'touchstart'].forEach(event => {
-                btn.addEventListener(event, (e) => {
-                    e.preventDefault();
-                    btn.classList.add('active');
-                    sendCommand(command);
-                });
+            
+            // Handle touch events
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent default touch behavior
+                btn.classList.add('active');
+                sendCommand(command);
             });
-            ['mouseup', 'mouseleave', 'touchend'].forEach(event => {
-                btn.addEventListener('mouseup', (e) => {
-                    e.preventDefault();
+
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                btn.classList.remove('active');
+                sendCommand('stop');
+            });
+
+            btn.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                btn.classList.remove('active');
+                sendCommand('stop');
+            });
+
+            // Keep mouse events for desktop
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                btn.classList.add('active');
+                sendCommand(command);
+            });
+
+            btn.addEventListener('mouseup', (e) => {
+                e.preventDefault();
+                btn.classList.remove('active');
+                sendCommand('stop');
+            });
+
+            btn.addEventListener('mouseleave', (e) => {
+                e.preventDefault();
+                if (btn.classList.contains('active')) {
                     btn.classList.remove('active');
                     sendCommand('stop');
-                });
+                }
             });
         });
 
